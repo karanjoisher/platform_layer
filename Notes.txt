@@ -1,0 +1,59 @@
+--------------- LINUX ----------------------
+
+1. Window Creation
+
+->  XOpenDisplay("machine:display_number.screen_number") to connect to the X server.
+->  XVisualInfo demanding a visual of the screen that supports 32bit depth TrueColor display.
+->  Window's attributes:Provide a color map that supports the chosen visual.
+    Side Note: do-not-propogate-mask is the mask of events that should not be sent to the parents of 
+    this window. override-redirect-mask :Configure and Map requests override SubstructureRedirectMask of parent.
+	TODO(KARAN): I haven't understood these attributes properly but remember they might cause a problem.
+->  Create window having the chosen visual and window attributes.
+->  Create Graphics Context which is required for operations like blitting and any other "drawing" function
+->  Create XImage object that holds reference to an offscreen buffer which is used for rendering. The contents are displayed using XPutImage. 
+
+2.  Allocation
+
+->  mmap similar to VirtualAlloc
+->  munmap to free memory
+
+3. Event Loop
+
+->  XCheckWIndowEvent takes the window and mask of events you are interested in and returns an XEvent object.
+->  ConfigureNotify is the type of event that informs us changes to structure of window like resizing, movement,etc.
+    For this StructureNotifyMask needs to be ORed in the eventsWanted mask. 
+->  TODO(KARAN): Figure out what the ResizeRedirectMask does(basically check all masks that have "Redirect" in them as they seem to have some different behaviour.
+    It seems that whenever someone tries to resize the window, it directly lets us handle what to do with the resize if ResizeRedirect is set.
+    Otherwise it does the default thing.
+	TODO(KARAN): I haven't understood these redirect masks properly but remember they might cause a problem.
+
+4.  Input
+->  XQueryPointer allows to directly query the state of mouse at any time.
+    It returns us the mask of buttons(Button1Mask, Button2Mask, ...) that are currently pressed and X,Y positions of the pointer.
+->  XKeysymToKeycode takes a symbolic representation of key and returns its keycode.
+	For eg: Keysyms XK_A and XK_a will return same keycode.
+	XQueryKeymap returns 256 long bit mask(char[32]) of keys being pressed.
+	If "a" is being pressed and its keycode is say 27 then its value will be located in (27/8 = 3rd byte) i.e in char[3]. The bit that represents its state in that byte will be (27 % 8 = 3) i.e. char[3] = xxxxaxxx
+
+5.  Timing functions
+->  rdtsc implemented using asm
+->  clock_gettime: takes a clockid and returns a timespec
+->  timespec{tv_sec, tv_nsec} should be interpreted as (tv_sec * 1E9 + tv_nano)ns.
+->  clock_nanosleep:can take a absolute time(eg:sleep till 3pm) or relative time(eg:sleep for 1 hour).
+
+6. Compiling 32bit on 64bit machine
+-> Installing multiple architecture compilers:
+   gcc-multilib and g++-multilib
+-> Installing 32bit version of -dev packages of libraries you are using.
+   apt-get install libx11-dev:i386
+
+   STACKOVERFLOW ANSWER THAT HELPED:https://askubuntu.com/questions/178592/compiling-32-bit-app-on-64-bit-cannot-find-lx11?newreg=b2cac9b3e5c94b4aadec012056a40726
+
+ANS:You need the header files, which are provided by -dev packages, and not in the library packages themselves. So, try installing libx11-dev. That should fix this particular build error, though you may get similar errors about other libraries (and then you can install their -dev packages.)
+
+Even though these packages provide header files rather than binaries, and in general header files account for all supported architectures through the use of preprocessor macros, nonetheless -dev packages in Ubuntu tend to be architecture-specific, and this is the case for libx11-dev (as can be seen here by expanding a release and finding the .deb packages listed for libx11-dev in that release). Since your Ubuntu system is 64-bit and you're compiling a 32-bit program which must link against the 32-bit version of the library, you'll probably need to install the 32-bit version of libx11-dev. If you're installing with apt-get or aptitude, you can specify that by indicating libx11-dev:i386 as the package to install (since multarch is supported and being used).
+
+http://packages.ubuntu.com/ is a good resource for finding the name of the -dev package corresponding to a library package. It's not always the library package's name immediately followed by -dev; sometimes version numbers present in the library package name, especially after a -, are absent in the name of the corresponding -dev package.
+
+	
+	
