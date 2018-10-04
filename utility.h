@@ -8,3 +8,8 @@
 #define ASSERT(expression)
 #endif
 
+#if DEBUG_BUILD
+#define DEBUG_LOG(...) fprintf(__VA_ARGS__)
+#else
+#define DEBUG_LOG(...) 
+#endif

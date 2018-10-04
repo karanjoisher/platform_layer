@@ -4,6 +4,12 @@ project_name = "Platform Layer";
 user_name = "KARAN";
 patterns = {"*.cpp", "*.h"};
 
+/*
+	{"/usr/include/X11", .relative=false, .recursive=true},
+	{"/usr/include/alsa", .relative=false, .recursive=true},
+	{"/usr/include", .relative=false, .recursive=true},
+*/
+
 load_paths = 
 {
 	{{
@@ -12,13 +18,12 @@ load_paths =
 	
 	{{
 	{".", .relative = true, .recursive=true},
-	{"/usr/include/X11", .relative=false, .recursive=true},
-	{"/usr/include", .relative=false, .recursive=true},
 	}, .os = "linux"},
 };
 
 
 command_list = {
+	
 	{
 		.name = "build",
 		.out  = "*compilation*",
@@ -45,12 +50,12 @@ command_list = {
 		.cursor_at_end = false,
 		.cmd = {
 			   	{
-				   	"build/win32_platform_layer.exe",
+				   	"W:/platform_layer/build/application.exe",
 				   	.os = "win",	
 			   	},
 					
 			   	{
-				   	"build/linux_platform_layer",
+				   	"build/application",
 				   	.os = "linux",	
 			   	},
 				},
@@ -62,7 +67,7 @@ command_list = {
 		.cursor_at_end = false,
 		.cmd = {
 			   	{
-				   	"devenv build\\win32_platform_layer.exe",
+				   	"devenv W:/platform_layer/build/application.exe",
 				   	.os = "win",	
 			   	},
 			   	{

@@ -55,5 +55,99 @@ Even though these packages provide header files rather than binaries, and in gen
 
 http://packages.ubuntu.com/ is a good resource for finding the name of the -dev package corresponding to a library package. It's not always the library package's name immediately followed by -dev; sometimes version numbers present in the library package name, especially after a -, are absent in the name of the corresponding -dev package.
 
-	
-	
+7. ALSA SOUND
+->  https://www.tldp.org/HOWTO/Alsa-sound-4.html : To install ALSA drivers.
+->  Sources: https://www.alsa-project.org/main/index.php/FramesPeriods
+			 https://www.linuxjournal.com/article/6735?page=0,1#N0x19ab2890.0x19ba78d8
+->  Transfering audio buffers of large size can cause high latency.
+	Hence buffer is divided into periods and transfer is done in units of periods.
+	Buffer = x periods
+	Period = y frames
+	frame  = z samples
+->  A frame is equivalent of one sample being played, irrespective of the number of channels or the number of bits. e.g.
+	1 frame of a Stereo 48khz 16bit PCM stream is 4 bytes.
+	1 frame of a 5.1 48khz 16bit PCM stream is 12 bytes.
+	A period is the number of frames in between each hardware interrupt. The poll() will return once a period.
+	The buffer is a ring buffer. The buffer size always has to be greater than one period size.
+	Commonly this is 2*period size, but some hardware can do 8 periods per buffer. 
+	It is also possible for the buffer size to not be an integer multiple of the period size.
+	Now, if the hardware has been set to 48000Hz , 2 periods, of 1024 frames each, making a buffer size of 2048 frames.
+	The hardware will interrupt 2 times per buffer. ALSA will endeavor to keep the buffer as full as possible. 
+	Once the first period of samples has been played, the third period of samples is transfered into the space 
+	the first one occupied while the second period of samples is being played. (normal ring buffer behaviour).
+->  General Pseudo Code
+	open interface for capture or playback
+	set hardware parameters(access mode, data format, channels, rate, etc.)
+	while there is data to be processed:
+   	read PCM data (capture)
+   	or write PCM data (playback)
+	close interface
+->  3 modes of data transfer:
+	A)Standard I/O (Blocked or non-blocked)
+	B)Event polling
+	C)Async callback
+->  snd_pcm_avail_delay calls snd_pcm_avail and snd_pcm_delay.
+    snd_pcm_avail syncs the hardware r/w cursor with the system ring buffer's r/w cursor
+    
+    Delay is defined as: "For playback the delay is defined as the time that a frame that 
+    is written to the PCM stream shortly after this call will take to be actually audible. 
+    It is as such the overall latency from the write call to the final DAC."
+	However according to docs, (bufferSizeInSamples - availableSamples) != delaySamples
+	snd_pcm_avail might include some additional, fixed latencies while snd_pcm_delay does not.
+->  Current setup for ALSA
+	Set buffer duration to 1 second
+	Set period size to framerate of app (i.e 0.03333ms for 30 fps)
+	Every frame I try to maintain a fill level of 3 frames worth of samples.(Ideally I would want 
+	to set this to 1 frames worth of samples but that causes frequent underruns).
+	Thus every frame I write some samples from the start of the buffer to the sound card such 
+	that pending samples + samples wrote = 3 frames worth of samples.
+->  SDL seems to push send the entire buffer to ALSA every frame. 
+
+8. Deciding on the API structure
+
+	There are two ways that come to mind in which the API can be designed:
+
+-> Option 1 
+Have a `interface.h` which will **forward declare** all the structs, declare all the functions that are required for using the API. Make a `linux_implementation.cpp` and `windows_implementation.cpp` that defines all the structs and implements all the functions that were mentioned in the `interface.h`. Compile `interface.h` and `linux_implementation.cpp` into a lib. Then the client will compile their application as follows:
+~~~~~~
+g++ platform_independent_application.cpp -llinux_implementation -o app
+or
+cl platform_independent_application.cpp /link windows_implementation -o app.exe
+~~~~~~
+
+-> Advantages
+1. User doesn't need to know how the struct is defined.
+2. User doesn't need to(can't) allocate the API structs. 
+
+-> Disadvantages
+
+1. User doesn't know how the struct is defined.
+2. User can't use his own memory allocator to allocate the API structs.
+3. Not easy to switch to unity build.
+4. Cannot view structs during debugging. (Huge negative for me)
+
+-> Option 2
+Have a `linux_interface.h` that will **define** all the structs and declare all the functions that are required for using the API. Make a `linux_implementation.cpp` that implements all the functions declared in the `linux_interface.h`.
+Create `platform_independent_application.cpp` that will `#include` the `linux_interface.h` and `linux_implementation.cpp`.
+It can then be compiled as follows:
+~~~~~~
+g++ platform_independent_application.cpp -o app
+~~~~~~
+or create `platform_independent_application.cpp` that will `#include` the `linux_interface.h`. Compile `linux_interface.h` and `linux_implementation.cpp` into a lib. It can then be compiled as follows:
+~~~~~~
+g++ platform_independent_application.cpp -llinux_implementation -o app
+~~~~~~
+Similar process for windows implementation.
+
+-> Advantages
+1. User can use the contents of the API structs in the code if they wish to.
+2. User can allocate struct using their own memory allocators.
+3. Easy switching to  Unity build.
+4. Can debug structs, routines of the API. (A big plus for me)
+
+-> Disadvantages
+
+1. Can't think of any!
+
+It seems that option 1 makes it less error prone for the user to use the API. However second approach allows the user to tradeoff platform independence by making use of platform specific attributes of an API struct. In my opinion approach two is better mainly because of the debugging benefit. 
+
