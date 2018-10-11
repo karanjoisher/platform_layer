@@ -1,13 +1,12 @@
 API
 {
     [] Cross platform virtual key codes
-    
-    [] Rethink file organization
+    [x] Rethink file organization
     {
-        [] interface.h -> forward declare structs, functions
-        [] <os_name>_struct_def.h -> definition of structs declared in interface.h
-        [] <os_name>_implementation.cpp -> define all functions declared in interface.h
+        [x] api_function_spec.h -> declare  functions
     }
+    [] Memory Management
+    [] Error handling strategy
 }
 
 Windows
@@ -28,7 +27,8 @@ Windows
     }
     [x] Timers(ms clock and cycles clock).
     [] Sleep
-    
+    [] OpenGL
+    [] FileIO
 }
 
 Linux
@@ -45,5 +45,9 @@ Linux
     }
     
     [x] Timers(ms clock and cycles clock)
-    [] Cross platform virtual key codes
+    [x] OpenGL
+    [x] Draw Offscreen buffer using OpenGL and blend properly
+    [] Update PfglRenderWindow to use modern OpenGL
+    [] FileIO
+    [] Fonts
 }

@@ -13,3 +13,10 @@
 #else
 #define DEBUG_LOG(...) 
 #endif
+
+
+#if DEBUG_BUILD
+#define DEBUG_ERROR(...) fprintf(stderr, "ERROR: "),fprintf(stderr, __VA_ARGS__), fprintf(stderr, " [LINE: %d, FUNCTION:%s, FILE:%s]\n",__LINE__, __func__, __FILE__)
+#else
+#define DEBUG_ERROR(...) 
+#endif

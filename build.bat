@@ -1,4 +1,7 @@
 @echo off
+
+REM python opengl_function_generator.py .
+
 IF NOT EXIST ./build mkdir ./build
 cd build
 

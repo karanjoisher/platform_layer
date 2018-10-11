@@ -9,8 +9,8 @@
 #if PLATFORM_LINUX
 #include "linux_platform_interface.h"
 #include "linux_implementation.cpp"
+#include <GL/glu.h>
 #endif
-
 
 uint32 DebugController(PfWindow *window, PfRect *rect)
 {
@@ -103,7 +103,7 @@ void RenderGrid(PfOffscreenBuffer *offscreenBuffer)
 {
     uint8 *row = (uint8 *)offscreenBuffer->data;
     uint32 redColor = 0xFFFF0000;
-    uint32 blueColor = 0xFF0000FF;
+    uint32 blueColor = 0xFF00FF00;
     uint32 color = redColor;
     
     int32 rectWidth = 20;
@@ -128,6 +128,7 @@ void RenderGrid(PfOffscreenBuffer *offscreenBuffer)
     }
 }
 
+
 int main()
 {
     PfInitialize();
@@ -143,7 +144,74 @@ int main()
     
     PfCreateWindow(&window[1], (char*)"WINDOW 1", 256, 0, width, height);
     
-    PfRect rect1 = {0, 0, 10, 10};
+#if PLATFORM_LINUX & 1
+    
+    // NOTE(KARAN): Modern opengl testing
+    
+    GL_CALL(glXMakeCurrent(window[1].display, window[1].windowHandle, window[1].glxContext));
+    real32 triangleVertices[] = 
+    {
+        -0.5f, -0.5f, 0.0f,
+        0.5f, -0.5f, 0.0f,
+        0.0f,  0.5f, 0.0f
+    };  
+    uint32 vao;
+    GL_CALL(glGenVertexArrays(1, &vao));  
+    GL_CALL(glBindVertexArray(vao));
+    
+    uint32 vbo;
+    GL_CALL(glGenBuffers(1, &vbo));
+    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, vbo));
+    GL_CALL(glBufferData(GL_ARRAY_BUFFER, ARRAY_COUNT(triangleVertices) * sizeof(triangleVertices[0]), triangleVertices, GL_STATIC_DRAW));
+    GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(real32), (void*)0));
+    GL_CALL(glEnableVertexAttribArray(0));
+    
+    char *vertexShaderSource = "#version 330 core\nlayout (location = 0) in vec3 aPos;\nvoid main(){gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);}";
+    
+    char *fragmentShaderSource = "#version 330 core\nout vec4 FragColor;void main(){FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);}";
+    
+    uint32 vertexShader;
+    GL_CALL(vertexShader = glCreateShader(GL_VERTEX_SHADER));
+    GL_CALL(glShaderSource(vertexShader, 1, &vertexShaderSource, 0));
+    GL_CALL(glCompileShader(vertexShader));
+    
+    int32 success;
+    char infoLog[512];
+    GL_CALL(glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success));
+    if (!success)
+    {
+        GL_CALL(glGetShaderInfoLog(vertexShader, 512, NULL, infoLog));
+        DEBUG_ERROR("%s", infoLog);
+    }
+    
+    
+    uint32 fragmentShader;
+    GL_CALL(fragmentShader = glCreateShader(GL_FRAGMENT_SHADER));
+    GL_CALL(glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL));
+    GL_CALL(glCompileShader(fragmentShader));
+    
+    GL_CALL(glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success));
+    if (!success)
+    {
+        GL_CALL(glGetShaderInfoLog(vertexShader, 512, NULL, infoLog));
+        DEBUG_ERROR("%s", infoLog);
+    }
+    
+    
+    uint32 shaderProgram;
+    GL_CALL(shaderProgram = glCreateProgram());
+    
+    GL_CALL(glAttachShader(shaderProgram, vertexShader));
+    GL_CALL(glAttachShader(shaderProgram, fragmentShader));
+    GL_CALL(glLinkProgram(shaderProgram));
+    
+    
+    GL_CALL(glUseProgram(shaderProgram));
+    GL_CALL(glDeleteShader(vertexShader));
+    GL_CALL(glDeleteShader(fragmentShader));  
+#endif
+    
+    PfRect rect1 = {0, 0, 30, 30};
     PfRect rect2 = {0, 0, 10, 10};
     
     PfTimestamp start = PfGetTimestamp();
@@ -228,7 +296,6 @@ int main()
                     if(eventWindow->offscreenBuffer.width != configureEvent.width || eventWindow->offscreenBuffer.height != configureEvent.height)
                     {
                         PfResizeWindow(eventWindow, configureEvent.width, configureEvent.height);
-                        
                     }
                     
                 }break;
@@ -291,14 +358,33 @@ int main()
         PfGetOffscreenBuffer(&window[1], &offscreenBuffer2);
         
         RenderGrid(&offscreenBuffer1);
-        
         DrawRectangle(&offscreenBuffer1, rect1, color1);
         
-        DrawRectangle(&offscreenBuffer2, PfRect{0, 0, offscreenBuffer2.width, offscreenBuffer2.height}, 0xFFFFFFFF);
-        DrawRectangle(&offscreenBuffer2, rect2, color2);
+        DrawRectangle(&offscreenBuffer2, PfRect{0, 0, offscreenBuffer2.width, offscreenBuffer2.height}, 0);
+        PfRect rect2Border  = {rect2.x - 5, rect2.y - 5, rect2.width + 10, rect2.height + 10};
+        DrawRectangle(&offscreenBuffer2, rect2Border, color2);
+        DrawRectangle(&offscreenBuffer2, rect2, 0);
         
         if(!window[0].shouldClose) PfBlitToScreen(&window[0]);
-        if(!window[1].shouldClose) PfBlitToScreen(&window[1]);
+#if PLATFORM_LINUX & 1
+        
+        if(!window[1].shouldClose)
+        {
+            
+            GL_CALL(glXMakeCurrent(window[1].display, window[1].windowHandle, window[1].glxContext));
+            
+            glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            
+            // Render Triangle
+            GL_CALL(glUseProgram(shaderProgram));
+            GL_CALL(glBindVertexArray(vao));
+            GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 3));
+            
+            //PfglRenderWindow(&window[1]);
+            GL_CALL(glXSwapBuffers (window[1].display, window[1].windowHandle));
+        }
+#endif
         
 #if PLATFORM_LINUX
         timespec nanoSecondsPerFrameTimespec = {0, 33000000};
@@ -308,6 +394,7 @@ int main()
         {
         }
 #endif
+        
         PfTimestamp end = PfGetTimestamp();
         uint64 endCycles = PfRdtsc();
         

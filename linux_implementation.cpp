@@ -3,16 +3,89 @@
 #include <stdio.h>
 #include <malloc.h>
 #include <time.h>
+#include <string.h>
 
 #include <X11/Xresource.h>
+#include "opengl.h"
+#include <GL/glx.h>
+
+#include "gl_error_handler.h"
 
 global_variable XContext globalXlibContext;
 global_variable Display*  globalDisplay;
+global_variable Screen*  globalScreen;
+global_variable int32  globalScreenNum;
+
 global_variable Atom globalWmDeleteWindowAtom;
 global_variable Atom globalWmState;
 global_variable Atom globalWmStateFullscreen;
 global_variable int32 globalKeyboard[256];
 global_variable int32 globalMouseButtons[5];
+global_variable GLXFBConfig globalFBConfig;
+global_variable Visual*  globalVisual;
+global_variable bool globalIsModernOpenGLContextSupported;
+
+typedef GLXContext (*GLXCreateContextAttribsFuncType)(Display*, GLXFBConfig, GLXContext, Bool, const int*);
+global_variable GLXCreateContextAttribsFuncType glXCreateContextAttribsARB;
+
+
+int32 GetMaxSamplesFBConfigIndexAndVisual(Display *display, GLXFBConfig* fbConfigs, int32 fbConfigsCount, Visual **visual)
+{
+    // NOTE(KARAN): Copy pasted the source from this site: https://www.khronos.org/opengl/wiki/Tutorial:_OpenGL_3.0_Context_Creation_(GLX)
+    
+    int32 bestFbc = -1, bestNumSamp = -1;
+    
+    int32 i;
+    for (i = 0; i < fbConfigsCount; ++i)
+    {
+        XVisualInfo *vi = glXGetVisualFromFBConfig( display, fbConfigs[i] );
+        if(vi)
+        {
+            int32 sampBuf, samples;
+            glXGetFBConfigAttrib( display, fbConfigs[i], GLX_SAMPLE_BUFFERS, &sampBuf );
+            glXGetFBConfigAttrib( display, fbConfigs[i], GLX_SAMPLES       , &samples  );
+            
+            if (bestFbc < 0 || sampBuf && samples > bestNumSamp ) bestFbc = i, bestNumSamp = samples, *visual = vi[0].visual;
+        }
+        XFree(vi);
+    }
+    
+    return bestFbc;
+}
+
+
+bool IsExtensionSupported(const char *extList, const char *extension)
+{
+    // NOTE(KARAN): Copy pasted the source from this site: https://www.khronos.org/opengl/wiki/Tutorial:_OpenGL_3.0_Context_Creation_(GLX)
+    const char *start;
+    const char *where, *terminator;
+    
+    /* Extension names should not have spaces. */
+    where = strchr(extension, ' ');
+    if (where || *extension == '\0')
+        return false;
+    
+    /* It takes a bit of care to be fool-proof about parsing the
+       OpenGL extensions string. Don't be fooled by sub-strings,
+       etc. */
+    for (start=extList;;) {
+        where = strstr(start, extension);
+        
+        if (!where)
+            break;
+        
+        terminator = where + strlen(extension);
+        
+        if ( where == start || *(where - 1) == ' ' )
+            if ( *terminator == ' ' || *terminator == '\0' )
+            return true;
+        
+        start = terminator;
+    }
+    
+    return false;
+}
+
 
 void PfInitialize()
 {
@@ -29,6 +102,61 @@ void PfInitialize()
     globalWmState = XInternAtom(globalDisplay, "_NET_WM_STATE", true);
     globalWmStateFullscreen = XInternAtom(globalDisplay, "_NET_WM_STATE_FULLSCREEN", true);
     
+    
+    /************** NOTE(KARAN): Get OpenGL Frame Buffer Configuration and Modern Context Creation Extension   ***************/
+    
+    int32 glxMajorVersion, glxMinorVersion;
+    Bool querySuccess =  glXQueryVersion(globalDisplay, &glxMajorVersion, &glxMinorVersion);
+    
+    // NOTE(KARAN): Minimum GLX VERSION 1.3 is required for frame buffer configurations(FBConfig) 
+    if(!(querySuccess == True && glxMajorVersion >= 1 && glxMinorVersion >= 3))
+    {
+        DEBUG_ERROR("Minimum GLX version required is 1.3. Detected version: %d.%d", glxMajorVersion, glxMinorVersion);
+    }
+    
+    // NOTE(KARAN) : GLX_PBUFFERBIT can also be specified for the GLX_DRAWABLE_TYPE  property.
+    int32 desiredFBAttribs[] = 
+    {
+        GLX_X_RENDERABLE , True                           ,
+        GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT | GLX_PIXMAP_BIT,
+        GLX_RENDER_TYPE  , GLX_RGBA_BIT                   ,
+        GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR                 ,
+        GLX_RED_SIZE     , 8                              ,
+        GLX_GREEN_SIZE   , 8                              ,
+        GLX_BLUE_SIZE    , 8                              ,
+        GLX_ALPHA_SIZE   , 8                              ,
+        GLX_DEPTH_SIZE   , 24                             ,
+        GLX_STENCIL_SIZE , 8                              ,
+        GLX_DOUBLEBUFFER , True                           ,
+        None
+    };
+    
+    globalScreenNum = XDefaultScreen(globalDisplay);
+    int32 screenNum = globalScreenNum;
+    
+    int32 possibleFBConfigsCount;
+    GLXFBConfig* possibleFBConfigs = glXChooseFBConfig(globalDisplay, screenNum, desiredFBAttribs, &possibleFBConfigsCount);
+    
+    if(!possibleFBConfigs)
+    {
+        DEBUG_ERROR("No FBConfig satisfying our settings were found");
+    }
+    
+    int32 choosenFBConfigIndex = GetMaxSamplesFBConfigIndexAndVisual(globalDisplay, possibleFBConfigs, possibleFBConfigsCount, &globalVisual);
+    
+    globalFBConfig = possibleFBConfigs[choosenFBConfigIndex];
+    
+    XFree(possibleFBConfigs);
+    
+    const char *glxExtensionsString = glXQueryExtensionsString(globalDisplay, screenNum);
+    glXCreateContextAttribsARB = (GLXCreateContextAttribsFuncType)
+        glXGetProcAddressARB( (const GLubyte *) "glXCreateContextAttribsARB" );
+    
+    globalIsModernOpenGLContextSupported = IsExtensionSupported(glxExtensionsString, "GLX_ARB_create_context") && glXCreateContextAttribsARB;
+    
+    
+    /*********** Loading Modern OpenGL functions *******/
+    GrabOpenGLFuncPointers();
 }
 
 void PfResizeWindow(PfWindow *window, int32 width, int32 height)
@@ -55,10 +183,13 @@ void PfResizeWindow(PfWindow *window, int32 width, int32 height)
     if(bufferSize > 0)
     {
         window->offscreenBuffer.data = (char*)malloc(bufferSize);//tempOffscreenMemory;
+        
+        glXMakeCurrent(window->display, window->windowHandle, window->glxContext);
+        GL_CALL(glViewport(0, 0, width, height));
+        
         ASSERT(window->offscreenBuffer.data);
     }
 }
-
 
 
 void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32 width, int32 height)
@@ -73,6 +204,8 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
        */
     //window->display = XOpenDisplay(":0");
     window->display = globalDisplay;
+    window->screen = globalScreen;
+    window->screenNum = globalScreenNum;
     
     if(window->display == 0)
     {
@@ -83,17 +216,18 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     XSynchronize(window->display, true);
 #endif
     
-    /* NOTE(KARAN): 
-Memory format = 
-Address 0:BB
-    Address 1:GG
-Address 2:RR
-Address 3:AA
-
-uint32 format = 
-MSB ----> LSB
-0xAA RR GG BB
-*/
+    int32 screenNum = window->screenNum;
+    Screen *screen = window->screen;
+    
+    /* NOTE(KARAN): Creation of offscreen buffer
+    * Memory format =  Address 0:BB
+    *                  Address 1:GG
+    *                  Address 2:RR
+    *                  Address 3:AA
+    * uint32 format =  MSB ----> LSB
+    *                  0xAA RR GG BB
+    */
+    
     XInitImage(&window->offscreenBuffer);
     window->offscreenBuffer.width = width;
     window->offscreenBuffer.height = height;		       /* size of image */
@@ -103,7 +237,7 @@ MSB ----> LSB
     window->offscreenBuffer.bitmap_unit = 32;		   /* quant. of scanline 8, 16, 32 */
     window->offscreenBuffer.bitmap_bit_order = LSBFirst;/* LSBFirst, MSBFirst */
     window->offscreenBuffer.bitmap_pad = 32;			/* 8, 16, 32 either XY or ZPixmap */
-    window->offscreenBuffer.depth = 32;			     /* depth of image */
+    window->offscreenBuffer.depth = 24;			     /* depth of image */
     window->offscreenBuffer.bits_per_pixel = 32;		/* bits per pixel (ZPixmap) */
     window->offscreenBuffer.red_mask = 0x00FF0000;	  /* bits in z arrangement */
     window->offscreenBuffer.green_mask = 0x0000FF00;
@@ -111,17 +245,18 @@ MSB ----> LSB
     
     PfResizeWindow(window, width, height);
     
-    int32 screenNum = XDefaultScreen(window->display);
     
+    Visual *chosenVisual = 0;
+    /*
     XVisualInfo visualInfo = {};
     visualInfo.screen = screenNum;
-    visualInfo.depth = 32;
+    visualInfo.depth = 24;
     visualInfo.c_class = TrueColor;
     visualInfo.bits_per_rgb = 8;
     long visualInfoMask = VisualScreenMask | VisualDepthMask | VisualClassMask | VisualBitsPerRGBMask;
     int32 possibleVisualsCount;
-    XVisualInfo *possibleVisuals = XGetVisualInfo(window->display, visualInfoMask, &visualInfo, &possibleVisualsCount);
-    Visual *chosenVisual = 0;
+    
+    XVisualInfo *possibleVisuals = glXGetVisualFromFBConfig(window->display, choosenFBConfig );//XGetVisualInfo(window->display, visualInfoMask, &visualInfo, &possibleVisualsCount);
     if(possibleVisuals)
     {
         chosenVisual = possibleVisuals[0].visual;
@@ -130,22 +265,21 @@ MSB ----> LSB
     else
     {
         fprintf(stderr,"ERROR: Could not get a visual of our choice. LINE: %d, FUNCTION:%s, FILE:%s\n", __LINE__, __func__, __FILE__);
-    }
+    }*/
+    
+    chosenVisual = globalVisual;
     ASSERT(chosenVisual != 0);
     
     Window rootWindow = XDefaultRootWindow(window->display);
-    Screen *screen = XScreenOfDisplay(window->display, screenNum);
-    window->screen = screen;
-    
     XSetWindowAttributes windowAttributes = {};
     
     /* NOTE(KARAN): For some reason border_pixel needs to be initialized.
-     Maybe initializing border_pixel overrides the need of border_pixmap
-     
-Border_pixmap default is CopyFromParent
-     In our case, parent and child dont have same depth, so that would cause an error
-     
-     But maybe defining the border_pixel gets rid of that call and hence everything seems to work ... ??? */
+    Maybe initializing border_pixel overrides the need of border_pixmap
+    
+    Border_pixmap default is CopyFromParent
+    In our case, parent and child dont have same depth, so that would cause an error
+    
+    But maybe defining the border_pixel gets rid of that call and hence everything seems to work ... ??? */
     windowAttributes.border_pixel = WhitePixel(window->display, screenNum);
     
     // NOTE(KARAN):If you set the colormap to CopyFromParent, the parent window's colormap is copied and used by its child. However, the child window must have the same visual type as the parent, or a BadMatch error results. 
@@ -155,9 +289,9 @@ Border_pixmap default is CopyFromParent
     
     unsigned long windowAttributesMask = CWBorderPixel | CWColormap | CWEventMask;
     
-    if(chosenVisual)
+    if(globalVisual)
     {
-        window->windowHandle =XCreateWindow(window->display, rootWindow, xPos, yPos, width, height, 0, 32,InputOutput, chosenVisual, windowAttributesMask, &windowAttributes);
+        window->windowHandle =XCreateWindow(window->display, rootWindow, xPos, yPos, width, height, 0, 24,InputOutput, chosenVisual, windowAttributesMask, &windowAttributes);
     }
     
     XStoreName(window->display, window->windowHandle, title);
@@ -187,6 +321,60 @@ Border_pixmap default is CopyFromParent
     gcAttributes.dashes = 4;
     
     window->graphicsContext = XCreateGC(window->display, window->windowHandle, gcAttributesMask, &gcAttributes);
+    
+    window->glxContext = 0;
+    /*
+NOTE(KARAN): GLX_ARB_create_context is an extension in GLX which enables the user to create modern OpenGL  contexts.
+ * If this extension exists, we create a modern OpenGL context, else we defer to the default context creation.*/
+    
+    if(globalIsModernOpenGLContextSupported)
+    {
+        /* NOTE(KARAN): Deatils about context creation 
+* https://www.khronos.org/registry/OpenGL/extensions/ARB/GLX_ARB_create_context.txt
+*
+    * GLX_CONTEXT_MAJOR_VERSION_ARB           
+         * GLX_CONTEXT_MINOR_VERSION_ARB           
+        * GLX_CONTEXT_FLAGS_ARB          Possible values: GLX_CONTEXT_DEBUG_BIT_ARB, 
+*                                                 GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB
+        * GLX_CONTEXT_PROFILE_MASK_ARB   Possible values: GLX_CONTEXT_CORE_PROFILE_BIT_ARB,  
+*                                                 GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB
+        */
+        
+        int32 desiredContextAttribs[] =
+        {
+            GLX_CONTEXT_MAJOR_VERSION_ARB  , 3,
+            GLX_CONTEXT_MINOR_VERSION_ARB  , 3,
+            //GLX_CONTEXT_FLAGS_ARB        , 0
+            GLX_CONTEXT_PROFILE_MASK_ARB   , GLX_CONTEXT_CORE_PROFILE_BIT_ARB,//GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
+            None
+        };
+        
+        window->glxContext = glXCreateContextAttribsARB(window->display, globalFBConfig, 0,
+                                                        True, desiredContextAttribs);
+    }
+    else
+    {
+        window->glxContext = glXCreateNewContext(window->display, globalFBConfig, GLX_RGBA_TYPE, 0, True);
+    }
+    
+    
+    glXMakeCurrent(window->display, window->windowHandle, window->glxContext);
+    glViewport(0, 0, width, height);
+    
+    GL_CALL(glGenTextures(1, &window->offscreenBufferTextureId));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, window->offscreenBufferTextureId));
+    
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER));
+    GLfloat debugColor[] = {1.0f, 0.0f, 1.0f, 1.0f};
+    GL_CALL(glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, debugColor));
+    
+    GL_CALL(glEnable(GL_BLEND));
+    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+    
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
     
     Status status = XSetWMProtocols(globalDisplay, window->windowHandle, &globalWmDeleteWindowAtom, 1);
     ASSERT(status != 0);
@@ -230,11 +418,11 @@ void PfToggleFullscreen(PfWindow *window)
 {
     /* NOTE(KARAN): 
     
-This spec helped in implementation of this function.
-_NET_WM_STATE property has to be changed for modifying the window's fullscreen status.
-
-https://standards.freedesktop.org/wm-spec/wm-spec-1.3.html#idm140130317598336
-
+    This spec helped in implementation of this function.
+    _NET_WM_STATE property has to be changed for modifying the window's fullscreen status.
+    
+    https://standards.freedesktop.org/wm-spec/wm-spec-1.3.html#idm140130317598336
+    
     */
     
     XEvent event = {};
@@ -246,8 +434,8 @@ https://standards.freedesktop.org/wm-spec/wm-spec-1.3.html#idm140130317598336
     /* NOTE(KARAN): 
     _NET_WM_STATE_REMOVE        0     remove/unset property 
     _NET_WM_STATE_ADD           1     add/set property 
-        _NET_WM_STATE_TOGGLE        2     toggle property  
-*/
+    _NET_WM_STATE_TOGGLE        2     toggle property  
+    */
     event.xclient.data.l[0] = 2; // _NET_WM_STATE_TOGGLE
     event.xclient.data.l[1] = globalWmStateFullscreen;
     event.xclient.data.l[2] = 0; // No second property
@@ -404,4 +592,49 @@ __inline__ uint64 PfRdtsc(void)
 void PfSetWindowTitle(PfWindow *window, char *title)
 {
     XStoreName(window->display, window->windowHandle, title);
+}
+
+
+
+void PfglRenderWindow(PfWindow *window)
+{
+    glEnable(GL_TEXTURE_2D);
+    
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, window->offscreenBufferTextureId));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, window[0].offscreenBuffer.width, window[0].offscreenBuffer.height, 0,
+                         GL_BGRA, GL_UNSIGNED_BYTE, window[0].offscreenBuffer.data));
+    
+    
+    real32 xMax = 1.0f;
+    // TODO(KARAN): Flip XImage so that yMax can be set to 1.0f
+    real32 yMax = -1.0f;
+    
+    GL_CALL(glBegin(GL_TRIANGLES));
+    
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    
+    // Lower triangle
+    GL_CALL(glTexCoord2f(0.0f, 0.0f));
+    GL_CALL(glVertex2f(-xMax, -yMax));
+    
+    GL_CALL(glTexCoord2f(1.0f, 0.0f));
+    GL_CALL(glVertex2f(xMax, -yMax));
+    
+    GL_CALL(glTexCoord2f(1.0f, 1.0f));
+    GL_CALL(glVertex2f(xMax, yMax));
+    
+    // Upper triangle
+    GL_CALL(glTexCoord2f(0.0f, 0.0f));
+    GL_CALL(glVertex2f(-xMax, -yMax));
+    
+    GL_CALL(glTexCoord2f(1.0f, 1.0f));
+    GL_CALL(glVertex2f(xMax, yMax));
+    
+    GL_CALL(glTexCoord2f(0.0f, 1.0f));
+    GL_CALL(glVertex2f(-xMax, yMax));
+    
+    glEnd();
+    
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    glDisable(GL_TEXTURE_2D);
 }
