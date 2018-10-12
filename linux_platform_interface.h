@@ -30,7 +30,12 @@ struct PfWindow
     bool shouldClose;
     bool hasKeyboardFocus;
     bool isWindowUnderMouse;
+    
+    // HACK(KARAN): This is temporarily added to support 
+    // offscreenbuffer rendering via opengl modern contexts.
     GLuint offscreenBufferTextureId;
+    int32 vao;
+    uint32 programId;
 };
 
 

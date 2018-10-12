@@ -1,13 +1,84 @@
 #include <stdio.h>
 #include <intrin.h>  
+#include <GL/gl.h>
+
 #include "utility.h"
 #include "project_types.h"
 #include "windows_platform_interface.h"
+#include "pf_opengl.h"
+#include "gl_error_handler.h"
 
 global_variable WNDCLASS globalWindowClass;
 global_variable int32 globalKeyboard[256];
 global_variable int32 globalMouseButtons[5];
 global_variable int64 globalQueryPerformanceHZ;
+global_variable int32 globalGLMajorVersion = 3;
+global_variable int32 globalGLMinorVersion = 3;
+global_variable bool globalCoreProfile       = false;
+
+/********* WGL specific stuff *******/
+
+#define WGL_DRAW_TO_WINDOW_ARB            0x2001
+#define WGL_SUPPORT_OPENGL_ARB            0x2010
+#define WGL_DOUBLE_BUFFER_ARB             0x2011
+#define WGL_PIXEL_TYPE_ARB                0x2013
+#define WGL_COLOR_BITS_ARB                0x2014
+#define WGL_TYPE_RGBA_ARB                 0x202B
+#define WGL_DEPTH_BITS_ARB                0x2022
+#define WGL_STENCIL_BITS_ARB              0x2023
+
+#define WGL_CONTEXT_DEBUG_BIT_ARB         0x00000001
+#define WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB 0x00000002
+#define WGL_CONTEXT_MAJOR_VERSION_ARB     0x2091
+#define WGL_CONTEXT_MINOR_VERSION_ARB     0x2092
+#define WGL_CONTEXT_LAYER_PLANE_ARB       0x2093
+#define WGL_CONTEXT_FLAGS_ARB             0x2094
+#define WGL_CONTEXT_PROFILE_MASK_ARB      0x9126
+#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB  0x00000001
+#define WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB 0x00000002
+#define ERROR_INVALID_VERSION_ARB         0x2095
+
+typedef  const char *WINAPI type_wglGetExtensionsStringARB(HDC hdc);
+typedef BOOL WINAPI type_wglChoosePixelFormatARB(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
+typedef HGLRC WINAPI type_wglCreateContextAttribsARB(HDC hDC, HGLRC hShareContext, const int *attribList);
+
+global_variable type_wglGetExtensionsStringARB* wglGetExtensionsStringARB;  
+global_variable type_wglChoosePixelFormatARB* wglChoosePixelFormatARB;
+global_variable type_wglCreateContextAttribsARB* wglCreateContextAttribsARB;
+
+
+void WinCreateDummyWindow(PfWindow *window)
+{
+    
+    WNDCLASS dummyWindowClass = {};
+    dummyWindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    dummyWindowClass.lpfnWndProc = DefWindowProcA;
+    dummyWindowClass.hInstance = GetModuleHandle(0);
+    dummyWindowClass.lpszClassName = "DummyWindowClass";
+    
+    if(RegisterClassA(&dummyWindowClass) == 0)
+    {
+        DEBUG_ERROR("Could not register window class.");
+        
+        ASSERT(!"Couldn't register window class");
+    }
+    
+    
+    window->windowHandle = CreateWindowEx(0, dummyWindowClass.lpszClassName, "Dummy Window", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 
+                                          CW_USEDEFAULT, CW_USEDEFAULT,
+                                          CW_USEDEFAULT, CW_USEDEFAULT,
+                                          0, 0, dummyWindowClass.hInstance, 0);
+    
+    if(window->windowHandle == 0)
+    {
+        DEBUG_ERROR("Could not create window.");
+        
+        ASSERT(!"Couldn't create window");
+    }
+    
+    window->deviceContext = GetDC(window->windowHandle);
+}
+
 
 LRESULT CALLBACK WinWindowCallback(HWND windowHandle, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -106,6 +177,8 @@ LRESULT CALLBACK WinWindowCallback(HWND windowHandle, UINT message, WPARAM wPara
 }
 
 
+
+
 void PfInitialize()
 {
     LARGE_INTEGER queryPerformanceHZResult;
@@ -115,6 +188,7 @@ void PfInitialize()
     
     globalQueryPerformanceHZ  = queryPerformanceHZResult.QuadPart;
     
+    // NOTE(KARAN): CS_OWNDC necessary for OpenGL context creation
     globalWindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     globalWindowClass.lpfnWndProc = WinWindowCallback;
     globalWindowClass.hInstance = GetModuleHandle(0);globalWindowClass.lpszClassName = "windowsPlatformLayer";
@@ -123,6 +197,129 @@ void PfInitialize()
     {
         fprintf(stderr,"ERROR: Could not register window class. LINE: %d, FUNCTION:%s, FILE:%s\n", __LINE__, __func__, __FILE__);
     }
+    
+    /***** Opengl context creation ******/
+    
+    PfWindow dummyWindow = {};
+    WinCreateDummyWindow(&dummyWindow);
+    
+    PIXELFORMATDESCRIPTOR desiredPixelFormat =
+    {
+        sizeof(PIXELFORMATDESCRIPTOR), 1,
+        PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,    // Flags
+        PFD_TYPE_RGBA,        // The kind of framebuffer. RGBA or palette.
+        32,                   // Colordepth of the framebuffer.
+        0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,
+        24,                   // Number of bits for the depthbuffer
+        8,                    // Number of bits for the stencilbuffer
+        0,                    // Number of Aux buffers in the framebuffer.
+        PFD_MAIN_PLANE,
+        0,0, 0, 0
+    };
+    
+    int32 closestPixelFormatIndex = ChoosePixelFormat(dummyWindow.deviceContext, &desiredPixelFormat);
+    ASSERT(closestPixelFormatIndex);
+    
+    /*
+An application can only set the pixel format of a window one time. 
+Once a window's pixel format is set, it cannot be changed.
+*/
+    BOOL setPixelFormatSuccess = SetPixelFormat(dummyWindow.deviceContext, closestPixelFormatIndex, &desiredPixelFormat);
+    ASSERT(setPixelFormatSuccess == TRUE);
+    
+    dummyWindow.glContext = wglCreateContext(dummyWindow.deviceContext);
+    ASSERT(dummyWindow.glContext);
+    
+    BOOL makeCurrentSuccess = wglMakeCurrent(dummyWindow.deviceContext, dummyWindow.glContext);
+    ASSERT(makeCurrentSuccess == TRUE);
+    
+    GrabOpenGLFuncPointers();
+    
+    wglGetExtensionsStringARB = (type_wglGetExtensionsStringARB*)wglGetProcAddress("wglGetExtensionsStringARB");
+    ASSERT(wglGetExtensionsStringARB);
+    
+    const char *wglExtensions = wglGetExtensionsStringARB(dummyWindow.deviceContext);
+    //DEBUG_LOG(stdout, "WGL extensions: %s\n", wglExtensions);
+    
+    // TODO(KARAN): Part of WGL_ARB_pixel_format extension
+    wglChoosePixelFormatARB = (type_wglChoosePixelFormatARB*)wglGetProcAddress("wglChoosePixelFormatARB");
+    ASSERT(wglChoosePixelFormatARB);
+    
+    // TODO(KARAN): Part of WGL_ARB_create_context extension
+    wglCreateContextAttribsARB = (type_wglCreateContextAttribsARB*)wglGetProcAddress("wglCreateContextAttribsARB");
+    ASSERT(wglCreateContextAttribsARB);
+    
+    makeCurrentSuccess = wglMakeCurrent(0, 0);
+    ASSERT(makeCurrentSuccess == TRUE);
+    
+    
+    BOOL deleteSuccess = wglDeleteContext(dummyWindow.glContext);
+    ASSERT(deleteSuccess == TRUE);
+    
+    deleteSuccess = ReleaseDC(dummyWindow.windowHandle, dummyWindow.deviceContext);
+    ASSERT(deleteSuccess == 1);
+    
+    deleteSuccess = DestroyWindow(dummyWindow.windowHandle);
+    ASSERT(deleteSuccess == TRUE);
+    
+    
+    
+}
+
+
+void WinCreateOpenGLContext(PfWindow *window)
+{
+    int32 desiredPixelFormatARB[] =
+    {
+        WGL_DRAW_TO_WINDOW_ARB, GL_TRUE,
+        WGL_SUPPORT_OPENGL_ARB, GL_TRUE,
+        WGL_DOUBLE_BUFFER_ARB, GL_TRUE,
+        WGL_PIXEL_TYPE_ARB, WGL_TYPE_RGBA_ARB,
+        WGL_COLOR_BITS_ARB, 32,
+        WGL_DEPTH_BITS_ARB, 24,
+        WGL_STENCIL_BITS_ARB, 8,
+        0, // End
+    };
+    
+    int32 closestPixelFormatIndex;
+    uint32 numFormats;
+    BOOL choosingSuccess = wglChoosePixelFormatARB(window->deviceContext, desiredPixelFormatARB, NULL, 1, &closestPixelFormatIndex, &numFormats);
+    ASSERT(choosingSuccess == TRUE);
+    
+    PIXELFORMATDESCRIPTOR desiredPixelFormat;
+    int32 describeSuccess =  DescribePixelFormat(window->deviceContext, closestPixelFormatIndex, sizeof(desiredPixelFormat), &desiredPixelFormat);
+    ASSERT(describeSuccess);
+    
+    BOOL setPixelFormatSuccess = SetPixelFormat(window->deviceContext, closestPixelFormatIndex, &desiredPixelFormat);
+    ASSERT(setPixelFormatSuccess == TRUE);
+    
+    // TODO(KARAN): Shared context for async texture uploads
+    HGLRC sharedContext = 0;
+    
+    //WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+    // TODO(KARAN): Make these attribs configurable via API
+    
+    
+    int32 profile = WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB;
+    if(globalCoreProfile)
+    {
+        profile = WGL_CONTEXT_CORE_PROFILE_BIT_ARB;
+    }
+    
+    int32 desiredContextAttribs[] = 
+    {
+        WGL_CONTEXT_MAJOR_VERSION_ARB, globalGLMajorVersion,
+        WGL_CONTEXT_MINOR_VERSION_ARB, globalGLMinorVersion,
+#if DEBUG_BUILD 
+        WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_DEBUG_BIT_ARB,
+#endif
+        WGL_CONTEXT_PROFILE_MASK_ARB, profile,
+        0
+    };
+    
+    window->glContext = wglCreateContextAttribsARB(window->deviceContext, sharedContext, desiredContextAttribs);
+    ASSERT(window->glContext);
 }
 
 
@@ -155,14 +352,20 @@ void PfResizeWindow(PfWindow *window, int32 width, int32 height)
     {
         window->offscreenBuffer.data = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT | MEM_RESERVE,PAGE_READWRITE);
         
+        wglMakeCurrent(window->deviceContext, window->glContext);
+        glViewport(0, 0, width, height);
+        
         ASSERT(window->offscreenBuffer.data);
     }
     
 }
 
-void PfCreateWindow(PfWindow *windowPtr, char *title, int32 xPos, int32 yPos, int32 width, int32 height)
+
+void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32 width, int32 height)
 {
-    PfWindow window = {};
+    PfWindow clear  = {};
+    *window = clear;
+    
     DWORD windowStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
     
     RECT windowRect = {};
@@ -178,27 +381,139 @@ void PfCreateWindow(PfWindow *windowPtr, char *title, int32 xPos, int32 yPos, in
     windowRect.right = windowRect.right - windowRect.left;
     windowRect.bottom = windowRect.bottom - windowRect.top;
     
-    window.windowHandle = CreateWindowEx(0,globalWindowClass.lpszClassName, title, windowStyle, xPos, yPos, windowRect.right, windowRect.bottom, 0, 0, globalWindowClass.hInstance,0);
+    window->windowHandle = CreateWindowEx(0,globalWindowClass.lpszClassName, title, windowStyle, xPos, yPos, windowRect.right, windowRect.bottom, 0, 0, globalWindowClass.hInstance,0);
     
-    if(window.windowHandle == 0)
+    
+    /* MSDN:  "To avoid retrieving a device context each time it needs to paint inside a window, an application can specify the CS_OWNDC style for the window class. This class style directs the system to create a private device context — that is, to allocate a unique device context for each window in the class. The application need only retrieve the context once and then use it for all subsequent painting." */
+    window->deviceContext = GetDC(window->windowHandle);
+    
+    if(window->windowHandle == 0)
     {
         DEBUG_LOG(stderr,"ERROR: Could not create window. LINE: %d, FUNCTION:%s, FILE:%s\n", __LINE__, __func__, __FILE__);
     }
-    ASSERT(window.windowHandle);
-    BOOL propertySetResult = SetPropA(window.windowHandle, "PfWindow", windowPtr);
-    HWND prevFocusWindowHandle = SetFocus(window.windowHandle);
+    ASSERT(window->windowHandle);
+    BOOL propertySetResult = SetPropA(window->windowHandle, "PfWindow", window);
+    HWND prevFocusWindowHandle = SetFocus(window->windowHandle);
     ASSERT(prevFocusWindowHandle != 0);
     
     // NOTE(KARAN): If the window already had keyboard focus, WM_SETFOCUS message isn't sent to the WINDOWPROC. Hence this hack.
-    if(prevFocusWindowHandle == window.windowHandle)
+    if(prevFocusWindowHandle == window->windowHandle)
     {
-        window.hasKeyboardFocus = true;
+        window->hasKeyboardFocus = true;
     }
     
     ASSERT(propertySetResult != 0);
     
-    PfResizeWindow(&window, width, height);
-    *windowPtr = window;
+    WinCreateOpenGLContext(window);
+    
+    // HACK(KARAN): Creation of texture and vertices for rendering offscreenbuffer via opengl
+    // Adding this so that code can be compiled.
+    wglMakeCurrent(window->deviceContext, window->glContext);
+    
+    DEBUG_LOG(stdout, "OpenGL version: %s\n\n", glGetString(GL_VERSION));
+    glViewport(0, 0, width, height);
+    
+    GL_CALL(glGenTextures(1, &window->offscreenBufferTextureId));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, window->offscreenBufferTextureId));
+    
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER));
+    GLfloat debugColor[] = {1.0f, 0.0f, 1.0f, 1.0f};
+    GL_CALL(glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, debugColor));
+    
+    GL_CALL(glEnable(GL_BLEND));
+    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+    
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    
+    real32 xMax = 1.0f;
+    // TODO(KARAN): Flip XImage so that yMax can be set to 1.0f
+    real32 yMax = -1.0f;
+    
+    real32 vertices[] = 
+    {
+        // positions          // texture coords
+        xMax,  yMax, 0.0f,   1.0f, 1.0f, // top right
+        xMax, -yMax, 0.0f,   1.0f, 0.0f, // bottom right
+        -xMax, -yMax, 0.0f,   0.0f, 0.0f, // bottom left
+        -xMax,  yMax, 0.0f,   0.0f, 1.0f  // top left 
+    };
+    uint32 indices[] = 
+    {
+        0, 1, 3, // first triangle
+        1, 2, 3  // second triangle
+    };
+    
+    uint32 vbo, vao, ebo;
+    GL_CALL(glGenVertexArrays(1, &vao));
+    GL_CALL(glGenBuffers(1, &vbo));
+    GL_CALL(glGenBuffers(1, &ebo));
+    
+    window->vao = vao;
+    
+    glBindVertexArray(vao);
+    
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+    
+    // position attribute
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    
+    // texture coord attribute
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    
+    char *vertexShaderSource = "#version 330 core\nlayout (location = 0) in vec3 aPos;layout (location = 1) in vec2 aTexCoord;out vec3 ourColor; out vec2 TexCoord; void main() { gl_Position = vec4(aPos, 1.0); ourColor = vec3(1.0f, 1.0f, 1.0f); TexCoord = vec2(aTexCoord.x, aTexCoord.y);}";
+    char *fragmentShaderSource = "#version 330 core\nout vec4 FragColor; in vec3 ourColor; in vec2 TexCoord; uniform sampler2D texture1; void main(){FragColor = texture(texture1, TexCoord);}";
+    
+    uint32 vertexShader;
+    GL_CALL(vertexShader = glCreateShader(GL_VERTEX_SHADER));
+    GL_CALL(glShaderSource(vertexShader, 1, &vertexShaderSource, 0));
+    GL_CALL(glCompileShader(vertexShader));
+    
+    int32 success;
+    char infoLog[512];
+    GL_CALL(glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success));
+    if (!success)
+    {
+        GL_CALL(glGetShaderInfoLog(vertexShader, 512, NULL, infoLog));
+        DEBUG_ERROR("%s", infoLog);
+    }
+    
+    
+    uint32 fragmentShader;
+    GL_CALL(fragmentShader = glCreateShader(GL_FRAGMENT_SHADER));
+    GL_CALL(glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL));
+    GL_CALL(glCompileShader(fragmentShader));
+    
+    GL_CALL(glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success));
+    if (!success)
+    {
+        GL_CALL(glGetShaderInfoLog(vertexShader, 512, NULL, infoLog));
+        DEBUG_ERROR("%s", infoLog);
+    }
+    
+    uint32 shaderProgram;
+    GL_CALL(shaderProgram = glCreateProgram());
+    window->programId = shaderProgram;
+    
+    GL_CALL(glAttachShader(shaderProgram, vertexShader));
+    GL_CALL(glAttachShader(shaderProgram, fragmentShader));
+    GL_CALL(glLinkProgram(shaderProgram));
+    
+    GL_CALL(glDeleteShader(vertexShader));
+    GL_CALL(glDeleteShader(fragmentShader));  
+    
+    glBindVertexArray(0);
+    wglMakeCurrent(0, 0);
+    
+    PfResizeWindow(window, width, height);
 }
 
 PfRect PfGetClientRect(PfWindow *window)
@@ -367,4 +682,95 @@ uint64 PfRdtsc()
 void PfSetWindowTitle(PfWindow *window, char *title)
 {
     SetWindowTextA(window->windowHandle, title);
+}
+
+inline void PfglMakeCurrent(PfWindow *window)
+{
+    BOOL makeCurrentSuccess;
+    
+    if(window)
+    {
+        makeCurrentSuccess = wglMakeCurrent(window->deviceContext, window->glContext);
+    }
+    else
+    {
+        makeCurrentSuccess = wglMakeCurrent(0, 0);
+    }
+    
+    ASSERT(makeCurrentSuccess == TRUE);
+}
+
+void PfglRenderWindow(PfWindow *window)
+{
+    GL_CALL(glUseProgram(window->programId));
+    
+    //GL_CALL(glEnable(GL_TEXTURE_2D));
+    GL_CALL(glActiveTexture(GL_TEXTURE0));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, window->offscreenBufferTextureId));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, window[0].offscreenBuffer.width, window[0].offscreenBuffer.height, 0,
+                         GL_BGRA, GL_UNSIGNED_BYTE, window[0].offscreenBuffer.data));
+    
+    // render container
+    GL_CALL(glBindVertexArray(window->vao));
+    GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
+    GL_CALL(glUseProgram(0));
+    GL_CALL(glBindVertexArray(0));
+    
+    //GL_CALL(glDisable(GL_TEXTURE_2D));
+    
+#if 0
+    glEnable(GL_TEXTURE_2D);
+    
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, window->offscreenBufferTextureId));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, window[0].offscreenBuffer.width, window[0].offscreenBuffer.height, 0,
+                         GL_BGRA, GL_UNSIGNED_BYTE, window[0].offscreenBuffer.data));
+    
+    
+    real32 xMax = 1.0f;
+    // TODO(KARAN): Flip XImage so that yMax can be set to 1.0f
+    real32 yMax = -1.0f;
+    
+    GL_CALL(glBegin(GL_TRIANGLES));
+    
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    
+    // Lower triangle
+    GL_CALL(glTexCoord2f(0.0f, 0.0f));
+    GL_CALL(glVertex2f(-xMax, -yMax));
+    
+    GL_CALL(glTexCoord2f(1.0f, 0.0f));
+    GL_CALL(glVertex2f(xMax, -yMax));
+    
+    GL_CALL(glTexCoord2f(1.0f, 1.0f));
+    GL_CALL(glVertex2f(xMax, yMax));
+    
+    // Upper triangle
+    GL_CALL(glTexCoord2f(0.0f, 0.0f));
+    GL_CALL(glVertex2f(-xMax, -yMax));
+    
+    GL_CALL(glTexCoord2f(1.0f, 1.0f));
+    GL_CALL(glVertex2f(xMax, yMax));
+    
+    GL_CALL(glTexCoord2f(0.0f, 1.0f));
+    GL_CALL(glVertex2f(-xMax, yMax));
+    
+    glEnd();
+    
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    glDisable(GL_TEXTURE_2D);
+#endif
+}
+
+
+void PfGLConfig(int32 glMajorVersion, int32 glMinorVersion, bool coreProfile)
+{
+    globalGLMajorVersion = glMajorVersion;
+    globalGLMinorVersion = glMinorVersion;
+    globalCoreProfile = coreProfile;
+}
+
+
+void PfglSwapBuffers(PfWindow *window)
+{
+    SwapBuffers(window->deviceContext);
 }

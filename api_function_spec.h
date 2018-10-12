@@ -17,4 +17,8 @@ PfTimestamp PfGetTimestamp();
 real32 PfGetSeconds(PfTimestamp startTime, PfTimestamp endTime);
 uint64 PfRdtsc();
 void PfSetWindowTitle(PfWindow *window, char *title);
-void PfglRenderWindow(PfWindow *window); // TODO(KARAN): Windows
+void PfglRenderWindow(PfWindow *window);
+void PfglMakeCurrent(PfWindow *window); 
+void PfGLConfig(int32 glMajorVersion, int32 glMinorVersion, bool coreProfile); 
+
+void PfglSwapBuffers(PfWindow *window);

@@ -1,4 +1,4 @@
-python opengl_function_generator.py .
+python opengl_function_generator.py PLATFORM_LINUX .
 
 mkdir -p build
 cd build

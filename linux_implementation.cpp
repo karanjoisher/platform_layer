@@ -6,7 +6,7 @@
 #include <string.h>
 
 #include <X11/Xresource.h>
-#include "opengl.h"
+#include "pf_opengl.h"
 #include <GL/glx.h>
 
 #include "gl_error_handler.h"
@@ -24,6 +24,10 @@ global_variable int32 globalMouseButtons[5];
 global_variable GLXFBConfig globalFBConfig;
 global_variable Visual*  globalVisual;
 global_variable bool globalIsModernOpenGLContextSupported;
+
+global_variable int32 globalGLMajorVersion = 3;
+global_variable int32 globalGLMinorVersion = 3;
+global_variable bool globalCoreProfile       = false;
 
 typedef GLXContext (*GLXCreateContextAttribsFuncType)(Display*, GLXFBConfig, GLXContext, Bool, const int*);
 global_variable GLXCreateContextAttribsFuncType glXCreateContextAttribsARB;
@@ -339,13 +343,24 @@ NOTE(KARAN): GLX_ARB_create_context is an extension in GLX which enables the use
         * GLX_CONTEXT_PROFILE_MASK_ARB   Possible values: GLX_CONTEXT_CORE_PROFILE_BIT_ARB,  
 *                                                 GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB
         */
+        int32 profile = GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB;
+        if(globalCoreProfile)
+        {
+            profile = GLX_CONTEXT_CORE_PROFILE_BIT_ARB;
+        }
         
         int32 desiredContextAttribs[] =
         {
-            GLX_CONTEXT_MAJOR_VERSION_ARB  , 3,
-            GLX_CONTEXT_MINOR_VERSION_ARB  , 3,
-            //GLX_CONTEXT_FLAGS_ARB        , 0
-            GLX_CONTEXT_PROFILE_MASK_ARB   , GLX_CONTEXT_CORE_PROFILE_BIT_ARB,//GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
+            GLX_CONTEXT_MAJOR_VERSION_ARB  , globalGLMajorVersion,
+            GLX_CONTEXT_MINOR_VERSION_ARB  , globalGLMinorVersion,
+            GLX_CONTEXT_FLAGS_ARB        , 
+#if DEBUG_BUILD
+            GLX_CONTEXT_DEBUG_BIT_ARB
+#else
+                0
+#endif
+                ,
+            GLX_CONTEXT_PROFILE_MASK_ARB   , globalCoreProfile,
             None
         };
         
@@ -357,8 +372,9 @@ NOTE(KARAN): GLX_ARB_create_context is an extension in GLX which enables the use
         window->glxContext = glXCreateNewContext(window->display, globalFBConfig, GLX_RGBA_TYPE, 0, True);
     }
     
-    
     glXMakeCurrent(window->display, window->windowHandle, window->glxContext);
+    
+    DEBUG_LOG(stdout, "OpenGL version: %s\n\n", glGetString(GL_VERSION));
     glViewport(0, 0, width, height);
     
     GL_CALL(glGenTextures(1, &window->offscreenBufferTextureId));
@@ -375,6 +391,90 @@ NOTE(KARAN): GLX_ARB_create_context is an extension in GLX which enables the use
     GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
     
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    
+    real32 xMax = 1.0f;
+    // TODO(KARAN): Flip XImage so that yMax can be set to 1.0f
+    real32 yMax = -1.0f;
+    
+    real32 vertices[] = 
+    {
+        // positions          // texture coords
+        xMax,  yMax, 0.0f,   1.0f, 1.0f, // top right
+        xMax, -yMax, 0.0f,   1.0f, 0.0f, // bottom right
+        -xMax, -yMax, 0.0f,   0.0f, 0.0f, // bottom left
+        -xMax,  yMax, 0.0f,   0.0f, 1.0f  // top left 
+    };
+    uint32 indices[] = 
+    {
+        0, 1, 3, // first triangle
+        1, 2, 3  // second triangle
+    };
+    
+    uint32 vbo, vao, ebo;
+    GL_CALL(glGenVertexArrays(1, &vao));
+    GL_CALL(glGenBuffers(1, &vbo));
+    GL_CALL(glGenBuffers(1, &ebo));
+    
+    window->vao = vao;
+    
+    glBindVertexArray(vao);
+    
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+    
+    // position attribute
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    
+    // texture coord attribute
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    
+    char *vertexShaderSource = "#version 330 core\nlayout (location = 0) in vec3 aPos;layout (location = 1) in vec2 aTexCoord;out vec3 ourColor; out vec2 TexCoord; void main() { gl_Position = vec4(aPos, 1.0); ourColor = vec3(1.0f, 1.0f, 1.0f); TexCoord = vec2(aTexCoord.x, aTexCoord.y);}";
+    char *fragmentShaderSource = "#version 330 core\nout vec4 FragColor; in vec3 ourColor; in vec2 TexCoord; uniform sampler2D texture1; void main(){FragColor = texture(texture1, TexCoord);}";
+    
+    uint32 vertexShader;
+    GL_CALL(vertexShader = glCreateShader(GL_VERTEX_SHADER));
+    GL_CALL(glShaderSource(vertexShader, 1, &vertexShaderSource, 0));
+    GL_CALL(glCompileShader(vertexShader));
+    
+    int32 success;
+    char infoLog[512];
+    GL_CALL(glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success));
+    if (!success)
+    {
+        GL_CALL(glGetShaderInfoLog(vertexShader, 512, NULL, infoLog));
+        DEBUG_ERROR("%s", infoLog);
+    }
+    
+    
+    uint32 fragmentShader;
+    GL_CALL(fragmentShader = glCreateShader(GL_FRAGMENT_SHADER));
+    GL_CALL(glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL));
+    GL_CALL(glCompileShader(fragmentShader));
+    
+    GL_CALL(glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success));
+    if (!success)
+    {
+        GL_CALL(glGetShaderInfoLog(vertexShader, 512, NULL, infoLog));
+        DEBUG_ERROR("%s", infoLog);
+    }
+    
+    uint32 shaderProgram;
+    GL_CALL(shaderProgram = glCreateProgram());
+    window->programId = shaderProgram;
+    
+    GL_CALL(glAttachShader(shaderProgram, vertexShader));
+    GL_CALL(glAttachShader(shaderProgram, fragmentShader));
+    GL_CALL(glLinkProgram(shaderProgram));
+    
+    GL_CALL(glDeleteShader(vertexShader));
+    GL_CALL(glDeleteShader(fragmentShader));  
+    
+    glBindVertexArray(0);
     
     Status status = XSetWMProtocols(globalDisplay, window->windowHandle, &globalWmDeleteWindowAtom, 1);
     ASSERT(status != 0);
@@ -598,6 +698,20 @@ void PfSetWindowTitle(PfWindow *window, char *title)
 
 void PfglRenderWindow(PfWindow *window)
 {
+    GL_CALL(glUseProgram(window->programId));
+    
+    //GL_CALL(glEnable(GL_TEXTURE_2D));
+    GL_CALL(glActiveTexture(GL_TEXTURE0));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, window->offscreenBufferTextureId));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, window[0].offscreenBuffer.width, window[0].offscreenBuffer.height, 0,
+                         GL_BGRA, GL_UNSIGNED_BYTE, window[0].offscreenBuffer.data));
+    
+    // render container
+    GL_CALL(glBindVertexArray(window->vao));
+    GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
+    GL_CALL(glUseProgram(0));
+    GL_CALL(glBindVertexArray(0));
+#if 0
     glEnable(GL_TEXTURE_2D);
     
     GL_CALL(glBindTexture(GL_TEXTURE_2D, window->offscreenBufferTextureId));
@@ -637,4 +751,28 @@ void PfglRenderWindow(PfWindow *window)
     
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
     glDisable(GL_TEXTURE_2D);
+#endif
+}
+
+void PfglMakeCurrent(PfWindow *window)
+{
+    if(window)
+    {
+        glXMakeCurrent(window->display, window->windowHandle, window->glxContext);
+    }
+    // TODO(KARAN): Not sure how to unbind context
+    
+}
+
+
+void PfGLConfig(int32 glMajorVersion, int32 glMinorVersion, bool coreProfile)
+{
+    globalGLMajorVersion = glMajorVersion;
+    globalGLMinorVersion = glMinorVersion;
+    globalCoreProfile = coreProfile;
+}
+
+void PfglSwapBuffers(PfWindow *window)
+{
+    glXSwapBuffers(window->display, window->windowHandle);
 }

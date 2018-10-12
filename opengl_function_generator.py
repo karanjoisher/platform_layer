@@ -54,10 +54,11 @@ if __name__ == "__main__":
     start = time.time()
 
     filepaths = []
-    
+
+    platform = sys.argv[1]
 
     # Adding all files to look for pending opengl functions
-    for i in range(0, len(sys.argv)):
+    for i in range(2, len(sys.argv)):
 
         if(os.path.isdir(sys.argv[i])):
             dirPath = os.path.abspath(sys.argv[i])
@@ -68,7 +69,11 @@ if __name__ == "__main__":
             filepaths.append(os.path.abspath(sys.argv[i]))
 
 
-    openglFilePath = "opengl.h"
+    if platform == "PLATFORM_WINDOWS":
+        openglFilePath = "windows_opengl.h"
+    elif platform == "PLATFORM_LINUX":
+        openglFilePath = "linux_opengl.h"
+
     glFuncPrototypeFilePath = "glcorearb.h"
 
     openglFile = open(openglFilePath, "r")
@@ -89,11 +94,20 @@ if __name__ == "__main__":
     openglFile.close()
 
     # Get opengl functions that are already defined
-    glHeaderFilePath = "/usr/include/GL/gl.h"
+    if platform == "PLATFORM_WINDOWS":
+        glHeaderFilePath = "C:/Program Files (x86)/Windows Kits/8.1/Include/um/gl/GL.h"
+    elif platform == "PLATFORM_LINUX":
+        glHeaderFilePath = "/usr/include/GL/gl.h"
+        
     glFile = open(glHeaderFilePath, "r")
     for line in glFile:
         line = EatWhiteSpace(line)
-        toMatch = "GLAPI"
+        if platform == "PLATFORM_WINDOWS":
+            toMatch = "WINGDIAPI"
+        elif platform == "PLATFORM_LINUX":
+            toMatch = "GLAPI"
+
+        
         if len(line) >= len(toMatch) and line[0: len(toMatch)] == toMatch:
             line = line[len(toMatch):]
             functionNameStartIndex = line.index("gl", len(toMatch))
@@ -167,7 +181,7 @@ if __name__ == "__main__":
     # Backing up current opengl file
     openglFile = open(openglFilePath, "r")
     backup = openglFile.read()
-    openglFileBackup = open("opengl_backup.h", "w")
+    openglFileBackup = open(openglFilePath + "backup", "w")
     openglFileBackup.write(backup)
     openglFileBackup.close()
 

@@ -12,6 +12,10 @@
 #include <GL/glu.h>
 #endif
 
+#if PLATFORM_WINDOWS
+#define sprintf sprintf_s
+#endif
+
 uint32 DebugController(PfWindow *window, PfRect *rect)
 {
     uint32 color = 0xFF000000;
@@ -132,6 +136,7 @@ void RenderGrid(PfOffscreenBuffer *offscreenBuffer)
 int main()
 {
     PfInitialize();
+    PfGLConfig(4, 3, true);
     
     int x = 0;
     int y = 0;
@@ -144,18 +149,22 @@ int main()
     
     PfCreateWindow(&window[1], (char*)"WINDOW 1", 256, 0, width, height);
     
-#if PLATFORM_LINUX & 1
+#if 1
     
     // NOTE(KARAN): Modern opengl testing
     
-    GL_CALL(glXMakeCurrent(window[1].display, window[1].windowHandle, window[1].glxContext));
+    //
+    PfglMakeCurrent(&window[1]);
+    
     real32 triangleVertices[] = 
     {
         -0.5f, -0.5f, 0.0f,
         0.5f, -0.5f, 0.0f,
         0.0f,  0.5f, 0.0f
     };  
+    
     uint32 vao;
+    
     GL_CALL(glGenVertexArrays(1, &vao));  
     GL_CALL(glBindVertexArray(vao));
     
@@ -205,10 +214,10 @@ int main()
     GL_CALL(glAttachShader(shaderProgram, fragmentShader));
     GL_CALL(glLinkProgram(shaderProgram));
     
-    
-    GL_CALL(glUseProgram(shaderProgram));
     GL_CALL(glDeleteShader(vertexShader));
     GL_CALL(glDeleteShader(fragmentShader));  
+    GL_CALL(glBindVertexArray(0));
+    PfglMakeCurrent(0);
 #endif
     
     PfRect rect1 = {0, 0, 30, 30};
@@ -341,7 +350,6 @@ int main()
             PfToggleFullscreen(&window[0]);
         }
         
-        
         if(!toggled && PfGetKeyState(&window[1], ALT_KEY) && PfGetKeyState(&window[1], ENTER_KEY) != 0)
         {
             toggled = true;
@@ -366,23 +374,29 @@ int main()
         DrawRectangle(&offscreenBuffer2, rect2, 0);
         
         if(!window[0].shouldClose) PfBlitToScreen(&window[0]);
-#if PLATFORM_LINUX & 1
+#if 1
         
         if(!window[1].shouldClose)
         {
             
-            GL_CALL(glXMakeCurrent(window[1].display, window[1].windowHandle, window[1].glxContext));
+            PfglMakeCurrent(&window[1]);
             
-            glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
+            glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             
             // Render Triangle
+            
             GL_CALL(glUseProgram(shaderProgram));
             GL_CALL(glBindVertexArray(vao));
             GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 3));
+            GL_CALL(glUseProgram(0));
+            GL_CALL(glBindVertexArray(0));
             
-            //PfglRenderWindow(&window[1]);
-            GL_CALL(glXSwapBuffers (window[1].display, window[1].windowHandle));
+            PfglRenderWindow(&window[1]);
+            
+            PfglSwapBuffers(&window[1]);
+            
+            PfglMakeCurrent(0);
         }
 #endif
         
@@ -410,7 +424,7 @@ int main()
         
         int32 xMouse = -2;
         int32 yMouse = -2;
-        bool inside;
+        bool inside = false;
         
         if(!window[0].shouldClose) inside = PfGetMouseCoordinates(&window[0], &xMouse, &yMouse);
         sprintf(temp, "%.2fms %.2FPS %.3fMHz Inside: %d X: %d Y: %d", secondsPerFrame * 1000.0f, 1.0f/secondsPerFrame, cyclesPerFrame/(secondsPerFrame * 1000.0f * 1000.0f), inside, xMouse, yMouse);

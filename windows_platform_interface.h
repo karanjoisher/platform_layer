@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include "project_types.h"
+#include <GL/gl.h>
 
 typedef int64 PfTimestamp;
 
@@ -37,8 +38,16 @@ struct PfWindow
     HWND windowHandle; //Window = unsigned long 
     WinOffscreenBuffer offscreenBuffer;
     WINDOWPLACEMENT prevWindowPlacement = {sizeof(prevWindowPlacement)};
+    HDC deviceContext;
+    HGLRC glContext;
     bool shouldClose;
     bool hasKeyboardFocus;
+    
+    // HACK(KARAN): This is temporarily added to support 
+    // offscreenbuffer rendering via opengl modern contexts.
+    GLuint offscreenBufferTextureId;
+    int32 vao;
+    uint32 programId;
 };
 
 #include "api_function_spec.h"

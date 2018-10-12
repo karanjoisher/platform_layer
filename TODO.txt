@@ -7,6 +7,7 @@ API
     }
     [] Memory Management
     [] Error handling strategy
+    [] Update PfglRenderWindow to use modern OpenGL
 }
 
 Windows
@@ -27,8 +28,10 @@ Windows
     }
     [x] Timers(ms clock and cycles clock).
     [] Sleep
-    [] OpenGL
+    [x] OpenGL
     [] FileIO
+    [] Convert wglMakeCurrents in code tp PfMakeCurrents
+    [] Bug: Software blit doesnt work in fullscreen mode after I added OpenGL context
 }
 
 Linux
@@ -43,11 +46,11 @@ Linux
         [x] Key and mouse events honoring the focus rules
         [] Closing events
     }
-    
     [x] Timers(ms clock and cycles clock)
     [x] OpenGL
     [x] Draw Offscreen buffer using OpenGL and blend properly
-    [] Update PfglRenderWindow to use modern OpenGL
+    
     [] FileIO
     [] Fonts
+    [] Convert glxMakeCurrents in code tp PfMakeCurrents
 }
