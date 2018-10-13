@@ -6,7 +6,6 @@
 #include "project_types.h"
 #include "windows_platform_interface.h"
 #include "pf_opengl.h"
-#include "gl_error_handler.h"
 
 global_variable WNDCLASS globalWindowClass;
 global_variable int32 globalKeyboard[256];
@@ -45,40 +44,6 @@ typedef HGLRC WINAPI type_wglCreateContextAttribsARB(HDC hDC, HGLRC hShareContex
 global_variable type_wglGetExtensionsStringARB* wglGetExtensionsStringARB;  
 global_variable type_wglChoosePixelFormatARB* wglChoosePixelFormatARB;
 global_variable type_wglCreateContextAttribsARB* wglCreateContextAttribsARB;
-
-
-void WinCreateDummyWindow(PfWindow *window)
-{
-    
-    WNDCLASS dummyWindowClass = {};
-    dummyWindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-    dummyWindowClass.lpfnWndProc = DefWindowProcA;
-    dummyWindowClass.hInstance = GetModuleHandle(0);
-    dummyWindowClass.lpszClassName = "DummyWindowClass";
-    
-    if(RegisterClassA(&dummyWindowClass) == 0)
-    {
-        DEBUG_ERROR("Could not register window class.");
-        
-        ASSERT(!"Couldn't register window class");
-    }
-    
-    
-    window->windowHandle = CreateWindowEx(0, dummyWindowClass.lpszClassName, "Dummy Window", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 
-                                          CW_USEDEFAULT, CW_USEDEFAULT,
-                                          CW_USEDEFAULT, CW_USEDEFAULT,
-                                          0, 0, dummyWindowClass.hInstance, 0);
-    
-    if(window->windowHandle == 0)
-    {
-        DEBUG_ERROR("Could not create window.");
-        
-        ASSERT(!"Couldn't create window");
-    }
-    
-    window->deviceContext = GetDC(window->windowHandle);
-}
-
 
 LRESULT CALLBACK WinWindowCallback(HWND windowHandle, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -181,6 +146,14 @@ LRESULT CALLBACK WinWindowCallback(HWND windowHandle, UINT message, WPARAM wPara
 
 void PfInitialize()
 {
+    
+    //// Setting the resolution of sleep timer
+    UINT sleepResolution = 1; //ms
+    if(timeBeginPeriod(sleepResolution) != TIMERR_NOERROR)
+    {
+        DEBUG_ERROR("Could not set the resolution of sleep timer"); 
+    }
+    
     LARGE_INTEGER queryPerformanceHZResult;
     
     BOOL result = QueryPerformanceFrequency(&queryPerformanceHZResult);
@@ -198,10 +171,33 @@ void PfInitialize()
         fprintf(stderr,"ERROR: Could not register window class. LINE: %d, FUNCTION:%s, FILE:%s\n", __LINE__, __func__, __FILE__);
     }
     
-    /***** Opengl context creation ******/
+    /***** Get WGL extensions and load opengl functions  ******/
     
     PfWindow dummyWindow = {};
-    WinCreateDummyWindow(&dummyWindow);
+    WNDCLASS dummyWindowClass = {};
+    dummyWindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    dummyWindowClass.lpfnWndProc = DefWindowProcA;
+    dummyWindowClass.hInstance = GetModuleHandle(0);
+    dummyWindowClass.lpszClassName = "DummyWindowClass";
+    
+    if(RegisterClassA(&dummyWindowClass) == 0)
+    {
+        DEBUG_ERROR("Could not register dummy window class.");
+        ASSERT(!"Couldn't register dummy window class");
+    }
+    
+    dummyWindow.windowHandle = CreateWindowEx(0, dummyWindowClass.lpszClassName, "Dummy Window", WS_OVERLAPPEDWINDOW, 
+                                              CW_USEDEFAULT, CW_USEDEFAULT,
+                                              CW_USEDEFAULT, CW_USEDEFAULT,
+                                              0, 0, dummyWindowClass.hInstance, 0);
+    
+    if(dummyWindow.windowHandle == 0)
+    {
+        DEBUG_ERROR("Could not create dummy window.");
+        
+        ASSERT(!"Couldn't create dummy window");
+    }
+    dummyWindow.deviceContext = GetDC(dummyWindow.windowHandle);
     
     PIXELFORMATDESCRIPTOR desiredPixelFormat =
     {
@@ -220,7 +216,6 @@ void PfInitialize()
     
     int32 closestPixelFormatIndex = ChoosePixelFormat(dummyWindow.deviceContext, &desiredPixelFormat);
     ASSERT(closestPixelFormatIndex);
-    
     /*
 An application can only set the pixel format of a window one time. 
 Once a window's pixel format is set, it cannot be changed.
@@ -250,10 +245,6 @@ Once a window's pixel format is set, it cannot be changed.
     wglCreateContextAttribsARB = (type_wglCreateContextAttribsARB*)wglGetProcAddress("wglCreateContextAttribsARB");
     ASSERT(wglCreateContextAttribsARB);
     
-    makeCurrentSuccess = wglMakeCurrent(0, 0);
-    ASSERT(makeCurrentSuccess == TRUE);
-    
-    
     BOOL deleteSuccess = wglDeleteContext(dummyWindow.glContext);
     ASSERT(deleteSuccess == TRUE);
     
@@ -262,9 +253,6 @@ Once a window's pixel format is set, it cannot be changed.
     
     deleteSuccess = DestroyWindow(dummyWindow.windowHandle);
     ASSERT(deleteSuccess == TRUE);
-    
-    
-    
 }
 
 
@@ -298,9 +286,6 @@ void WinCreateOpenGLContext(PfWindow *window)
     HGLRC sharedContext = 0;
     
     //WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-    // TODO(KARAN): Make these attribs configurable via API
-    
-    
     int32 profile = WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB;
     if(globalCoreProfile)
     {
@@ -318,7 +303,16 @@ void WinCreateOpenGLContext(PfWindow *window)
         0
     };
     
-    window->glContext = wglCreateContextAttribsARB(window->deviceContext, sharedContext, desiredContextAttribs);
+    if(wglCreateContextAttribsARB)
+    {
+        window->glContext = wglCreateContextAttribsARB(window->deviceContext, sharedContext, desiredContextAttribs);
+    }
+    else
+    {
+        window->glContext = wglCreateContext(window->deviceContext);
+        DEBUG_ERROR("Couldn't create a modern OpenGL context. wgl create context arb extension not available"); 
+    }
+    
     ASSERT(window->glContext);
 }
 
@@ -352,9 +346,11 @@ void PfResizeWindow(PfWindow *window, int32 width, int32 height)
     {
         window->offscreenBuffer.data = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT | MEM_RESERVE,PAGE_READWRITE);
         
-        wglMakeCurrent(window->deviceContext, window->glContext);
-        glViewport(0, 0, width, height);
-        
+        if(window->glContext)
+        {
+            wglMakeCurrent(window->deviceContext, window->glContext);
+            GL_CALL(glViewport(0, 0, width, height));
+        }
         ASSERT(window->offscreenBuffer.data);
     }
     
@@ -392,6 +388,8 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
         DEBUG_LOG(stderr,"ERROR: Could not create window. LINE: %d, FUNCTION:%s, FILE:%s\n", __LINE__, __func__, __FILE__);
     }
     ASSERT(window->windowHandle);
+    PfResizeWindow(window, width, height);
+    
     BOOL propertySetResult = SetPropA(window->windowHandle, "PfWindow", window);
     HWND prevFocusWindowHandle = SetFocus(window->windowHandle);
     ASSERT(prevFocusWindowHandle != 0);
@@ -404,6 +402,8 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     
     ASSERT(propertySetResult != 0);
     
+#if 1
+    
     WinCreateOpenGLContext(window);
     
     // HACK(KARAN): Creation of texture and vertices for rendering offscreenbuffer via opengl
@@ -411,7 +411,7 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     wglMakeCurrent(window->deviceContext, window->glContext);
     
     DEBUG_LOG(stdout, "OpenGL version: %s\n\n", glGetString(GL_VERSION));
-    glViewport(0, 0, width, height);
+    GL_CALL(glViewport(0, 0, width, height));
     
     GL_CALL(glGenTextures(1, &window->offscreenBufferTextureId));
     GL_CALL(glBindTexture(GL_TEXTURE_2D, window->offscreenBufferTextureId));
@@ -453,7 +453,7 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     
     window->vao = vao;
     
-    glBindVertexArray(vao);
+    GL_CALL(glBindVertexArray(vao));
     
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
@@ -511,9 +511,7 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     GL_CALL(glDeleteShader(fragmentShader));  
     
     glBindVertexArray(0);
-    wglMakeCurrent(0, 0);
-    
-    PfResizeWindow(window, width, height);
+#endif
 }
 
 PfRect PfGetClientRect(PfWindow *window)
@@ -558,11 +556,32 @@ void PfGetOffscreenBuffer(PfWindow *window, PfOffscreenBuffer *offscreenBuffer)
 
 void PfBlitToScreen(PfWindow *window)
 {
-    HDC deviceContextHandle = GetDC(window->windowHandle);
-    StretchDIBits(deviceContextHandle,
-                  0, 0,window->offscreenBuffer.width, window->offscreenBuffer.height,
-                  0,0,window->offscreenBuffer.width, window->offscreenBuffer.height,
-                  window->offscreenBuffer.data, &(window->offscreenBuffer.info),DIB_RGB_COLORS,SRCCOPY);
+    /* HACK(KARAN): stretchdibits doesn't work in fullscreen mode
+    when the window has an opengl context. So when in fullscreen mode
+    and if we have a glContext, use opengl texture rendering path.
+    */
+#define DEBUG_ENABLE_HARDWARE_BLIT 1
+#if DEBUG_ENABLE_HARDWARE_BLIT
+    if(window->fullscreen && (window->glContext != 0))
+    {
+        PfglMakeCurrent(window);
+        PfglRenderWindow(window);
+        PfglSwapBuffers(window);
+        PfglMakeCurrent(0);
+    }
+    else
+    {
+#endif
+        HDC deviceContextHandle = window->deviceContext;//GetDC(window->windowHandle);
+        int32 scanLines = StretchDIBits(deviceContextHandle,
+                                        0, 0,window->offscreenBuffer.width, window->offscreenBuffer.height,
+                                        0,0,window->offscreenBuffer.width, window->offscreenBuffer.height,
+                                        window->offscreenBuffer.data, &(window->offscreenBuffer.info),DIB_RGB_COLORS,SRCCOPY);
+        
+        ASSERT(scanLines);
+#if DEBUG_ENABLE_HARDWARE_BLIT
+    }
+#endif
 }
 
 void PfToggleFullscreen(PfWindow *window)
@@ -580,6 +599,7 @@ void PfToggleFullscreen(PfWindow *window)
                          monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left,
                          monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top,
                          SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+            window->fullscreen = true;
         }
     }
     else
@@ -589,6 +609,7 @@ void PfToggleFullscreen(PfWindow *window)
         SetWindowPos(window->windowHandle, 0, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
                      SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        window->fullscreen = false;
     }
 }
 
@@ -686,15 +707,11 @@ void PfSetWindowTitle(PfWindow *window, char *title)
 
 inline void PfglMakeCurrent(PfWindow *window)
 {
-    BOOL makeCurrentSuccess;
+    BOOL makeCurrentSuccess = TRUE;
     
     if(window)
     {
         makeCurrentSuccess = wglMakeCurrent(window->deviceContext, window->glContext);
-    }
-    else
-    {
-        makeCurrentSuccess = wglMakeCurrent(0, 0);
     }
     
     ASSERT(makeCurrentSuccess == TRUE);
@@ -773,4 +790,12 @@ void PfGLConfig(int32 glMajorVersion, int32 glMinorVersion, bool coreProfile)
 void PfglSwapBuffers(PfWindow *window)
 {
     SwapBuffers(window->deviceContext);
+}
+
+void PfSleep(int32 milliseconds)
+{
+    if(milliseconds > 0)
+    {
+        Sleep(milliseconds);
+    }
 }

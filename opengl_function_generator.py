@@ -206,7 +206,7 @@ if __name__ == "__main__":
 
         toMatch = "INSERT_NEW_FUNCTION_GRABS_HERE"
         if len(tempLine) >= len(toMatch) and tempLine[0: len(toMatch)] == toMatch:
-            newOpenglFileContent += line + "\n"
+            newOpenglFileContent += line
             newOpenglFileContent += getProcAddressString
             continue
 

@@ -19,6 +19,6 @@ uint64 PfRdtsc();
 void PfSetWindowTitle(PfWindow *window, char *title);
 void PfglRenderWindow(PfWindow *window);
 void PfglMakeCurrent(PfWindow *window); 
-void PfGLConfig(int32 glMajorVersion, int32 glMinorVersion, bool coreProfile); 
-
+void PfGLConfig(int32 glMajorVersion, int32 glMinorVersion, bool coreProfile);
 void PfglSwapBuffers(PfWindow *window);
+void PfSleep(int32 milliseconds);

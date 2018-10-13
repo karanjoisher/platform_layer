@@ -22,6 +22,10 @@ typedef size_t GLsizeiptr;
 
 
 INSERT_NEW_FUNCTION_TYPES_HERE
+typedef void  type_glLinkProgram (GLuint program);
+typedef void  type_glDeleteShader (GLuint shader);
+typedef void  type_glUseProgram (GLuint program);
+typedef void  type_glActiveTexture (GLenum texture);
 typedef void  type_glGenVertexArrays (GLsizei n, GLuint *arrays);
 typedef void  type_glBindVertexArray (GLuint array);
 typedef void  type_glGenBuffers (GLsizei n, GLuint *buffers);
@@ -36,14 +40,15 @@ typedef void  type_glGetShaderiv (GLuint shader, GLenum pname, GLint *params);
 typedef void  type_glGetShaderInfoLog (GLuint shader, GLsizei bufSize, GLsizei *length, GLchar *infoLog);
 typedef GLuint  type_glCreateProgram (void);
 typedef void  type_glAttachShader (GLuint program, GLuint shader);
-typedef void  type_glLinkProgram (GLuint program);
-typedef void  type_glDeleteShader (GLuint shader);
-typedef void  type_glUseProgram (GLuint program);
-typedef void  type_glActiveTexture (GLenum texture);
+
 
 #define GL_FUNCTION(name) global_variable type_##name *name
 
 INSERT_NEW_FUNCTION_DECLARATIONS_HERE
+GL_FUNCTION(glLinkProgram);
+GL_FUNCTION(glDeleteShader);
+GL_FUNCTION(glUseProgram);
+GL_FUNCTION(glActiveTexture);
 GL_FUNCTION(glGenVertexArrays);
 GL_FUNCTION(glBindVertexArray);
 GL_FUNCTION(glGenBuffers);
@@ -58,10 +63,7 @@ GL_FUNCTION(glGetShaderiv);
 GL_FUNCTION(glGetShaderInfoLog);
 GL_FUNCTION(glCreateProgram);
 GL_FUNCTION(glAttachShader);
-GL_FUNCTION(glLinkProgram);
-GL_FUNCTION(glDeleteShader);
-GL_FUNCTION(glUseProgram);
-GL_FUNCTION(glActiveTexture);
+
 
 #if PLATFORM_LINUX
 #define GL_GET_PROC_ADDRESS(name) name = (type_##name *)glXGetProcAddressARB((const GLubyte*) #name);
@@ -72,8 +74,10 @@ GL_FUNCTION(glActiveTexture);
 void GrabOpenGLFuncPointers()
 {
     INSERT_NEW_FUNCTION_GRABS_HERE;
-
-    
+	GL_GET_PROC_ADDRESS(glLinkProgram);
+	GL_GET_PROC_ADDRESS(glDeleteShader);
+	GL_GET_PROC_ADDRESS(glUseProgram);
+	GL_GET_PROC_ADDRESS(glActiveTexture);
     GL_GET_PROC_ADDRESS(glGenVertexArrays);
     GL_GET_PROC_ADDRESS(glBindVertexArray);
     GL_GET_PROC_ADDRESS(glGenBuffers);
@@ -88,10 +92,6 @@ void GrabOpenGLFuncPointers()
     GL_GET_PROC_ADDRESS(glGetShaderInfoLog);
     GL_GET_PROC_ADDRESS(glCreateProgram);
     GL_GET_PROC_ADDRESS(glAttachShader);
-    GL_GET_PROC_ADDRESS(glLinkProgram);
-    GL_GET_PROC_ADDRESS(glDeleteShader);
-    GL_GET_PROC_ADDRESS(glUseProgram);
-    GL_GET_PROC_ADDRESS(glActiveTexture);
     
 }
 

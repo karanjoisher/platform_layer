@@ -338,7 +338,6 @@ int main()
 #endif
         
         static bool toggled = false;
-        
         if(PfGetKeyState(ALT_KEY) == 0 || PfGetKeyState(ENTER_KEY) == 0)
         {
             toggled = false;
@@ -348,6 +347,7 @@ int main()
         {
             toggled = true;
             PfToggleFullscreen(&window[0]);
+            
         }
         
         if(!toggled && PfGetKeyState(&window[1], ALT_KEY) && PfGetKeyState(&window[1], ENTER_KEY) != 0)
@@ -373,7 +373,11 @@ int main()
         DrawRectangle(&offscreenBuffer2, rect2Border, color2);
         DrawRectangle(&offscreenBuffer2, rect2, 0);
         
-        if(!window[0].shouldClose) PfBlitToScreen(&window[0]);
+        if(!window[0].shouldClose) 
+        {
+            PfBlitToScreen(&window[0]);
+        }
+        
 #if 1
         
         if(!window[1].shouldClose)
@@ -400,14 +404,12 @@ int main()
         }
 #endif
         
-#if PLATFORM_LINUX
-        timespec nanoSecondsPerFrameTimespec = {0, 33000000};
+        real32 targetMillisecondsPerFrame = (1000.0f/30.0f);
+        real32 msRequiredToRenderThisFrame = PfGetSeconds(start, PfGetTimestamp()) * 1000.0f;
         
-        timespec sleepTimeEnd = AddTimespec(start, nanoSecondsPerFrameTimespec);
-        while(clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &sleepTimeEnd,0) != 0)
-        {
-        }
-#endif
+        real32 sleepTime = targetMillisecondsPerFrame - msRequiredToRenderThisFrame;
+        
+        PfSleep((int32)sleepTime);
         
         PfTimestamp end = PfGetTimestamp();
         uint64 endCycles = PfRdtsc();

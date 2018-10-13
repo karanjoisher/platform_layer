@@ -41,6 +41,7 @@ struct PfWindow
     HDC deviceContext;
     HGLRC glContext;
     bool shouldClose;
+    bool fullscreen;
     bool hasKeyboardFocus;
     
     // HACK(KARAN): This is temporarily added to support 

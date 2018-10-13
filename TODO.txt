@@ -1,13 +1,15 @@
 API
 {
-    [] Cross platform virtual key codes
     [x] Rethink file organization
     {
         [x] api_function_spec.h -> declare  functions
     }
+    [x] Update PfglRenderWindow to use modern OpenGL
+    
+    [] Cross platform virtual key codes
+    [] Abstract away the message pump
     [] Memory Management
     [] Error handling strategy
-    [] Update PfglRenderWindow to use modern OpenGL
 }
 
 Windows
@@ -27,11 +29,19 @@ Windows
         [] WM_CLOSE, WM_QUIT, etc
     }
     [x] Timers(ms clock and cycles clock).
-    [] Sleep
+    [x] Sleep
     [x] OpenGL
+	[x] Create a 1.1 gl context creation path when wglCreateContextARB isn't available
+    
     [] FileIO
     [] Convert wglMakeCurrents in code tp PfMakeCurrents
-    [] Bug: Software blit doesnt work in fullscreen mode after I added OpenGL context
+    [?] Bug: Software blit doesnt work in fullscreen mode after I added OpenGL context
+    {
+        HACK(KARAN): stretchdibits doesn't work in fullscreen mode when the window has an opengl context.
+            So when in fullscreen mode and if we have a glContext, 
+            use opengl texture rendering path.
+    }
+    [] Look into what PeekMessage is supposed to do if we pass 0 as window handle
 }
 
 Linux
@@ -52,5 +62,5 @@ Linux
     
     [] FileIO
     [] Fonts
-    [] Convert glxMakeCurrents in code tp PfMakeCurrents
+    [] Convert glxMakeCurrents in code to PfMakeCurrents
 }

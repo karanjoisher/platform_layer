@@ -9,8 +9,6 @@
 #include "pf_opengl.h"
 #include <GL/glx.h>
 
-#include "gl_error_handler.h"
-
 global_variable XContext globalXlibContext;
 global_variable Display*  globalDisplay;
 global_variable Screen*  globalScreen;
@@ -775,4 +773,16 @@ void PfGLConfig(int32 glMajorVersion, int32 glMinorVersion, bool coreProfile)
 void PfglSwapBuffers(PfWindow *window)
 {
     glXSwapBuffers(window->display, window->windowHandle);
+}
+
+void PfSleep(int32 milliseconds)
+{
+    if(milliseconds > 0)
+    {
+        timespec sleepTime = {0, milliseconds * 1000000};
+        timespec sleepTimeEnd = AddTimespec(PfGetTimestamp(), sleepTime);
+        while(clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &sleepTimeEnd,0) != 0)
+        {
+        }
+    }
 }

@@ -7,8 +7,7 @@
 #endif
 
 #include "utility.h"
-
-#define GL_CALL(glFunctionCall) glClearErrors(); glFunctionCall; glCheckErrors((char*)#glFunctionCall,(char*) __FILE__,  __LINE__);
+#define GL_CALL(glFunctionCall) glClearErrors();glFunctionCall; glCheckErrors((char*)#glFunctionCall,(char*) __FILE__,  __LINE__);
 
 inline void glClearErrors()
 {
