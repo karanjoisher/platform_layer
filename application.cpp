@@ -36,22 +36,22 @@ uint32 DebugController(PfWindow *window, PfRect *rect)
         color = color | 0xFF0000FF;
     }
     
-    if(PfGetKeyState(window, 'W'))
+    if(PfGetKeyState(window, PF_LEFT_ALT))
     {
         rect->y  -= 2;
     }
     
-    if(PfGetKeyState(window, 'A'))
+    if(PfGetKeyState(window, PF_A))
     {
         rect->x  -= 2;
     }
     
-    if(PfGetKeyState(window, 'S'))
+    if(PfGetKeyState(window, PF_S))
     {
         rect->y  += 2;
     }
     
-    if(PfGetKeyState(window, 'D'))
+    if(PfGetKeyState(window, PF_D))
     {
         rect->x  += 2;
     }
@@ -132,7 +132,7 @@ void RenderGrid(PfOffscreenBuffer *offscreenBuffer)
     }
 }
 
-
+#if 1
 int main()
 {
     PfInitialize();
@@ -217,7 +217,6 @@ int main()
     GL_CALL(glDeleteShader(vertexShader));
     GL_CALL(glDeleteShader(fragmentShader));  
     GL_CALL(glBindVertexArray(0));
-    PfglMakeCurrent(0);
 #endif
     
     PfRect rect1 = {0, 0, 30, 30};
@@ -227,130 +226,22 @@ int main()
     uint64 startCycles = PfRdtsc();
     while(!window[0].shouldClose || !window[1].shouldClose)
     {
-#if PLATFORM_WINDOWS
-        
-        // NOTE(KARAN):  Message Pump
-        globalMouseButtons[0] = GetKeyState(VK_LBUTTON) >> 15;
-        globalMouseButtons[1] = GetKeyState(VK_MBUTTON) >> 15;
-        globalMouseButtons[2] = GetKeyState(VK_RBUTTON) >> 15;
-        globalMouseButtons[3] = GetKeyState(VK_XBUTTON1) >> 15;
-        globalMouseButtons[4] = GetKeyState(VK_XBUTTON2) >> 15;
-        
-        for(int32 i = 0; i < ARRAY_COUNT(window); i++)
-        {
-            MSG message = {};
-            while(PeekMessage(&message, window[i].windowHandle, 0, 0, PM_REMOVE) > 0)
-            {
-                //DEBUG_LOG(stdout, "FIELDING MESSAGE: %d\n", message.message);
-                switch(message.message)
-                {
-                    case WM_QUIT:
-                    {
-                        window[i].shouldClose = true;
-                    }break;
-                    default:
-                    {
-                        TranslateMessage(&message);
-                        DispatchMessage(&message);
-                    }break;
-                }
-            }
-        }
-#elif PLATFORM_LINUX
-        // NOTE(KARAN):  Message Pump
-        
-        Display *display = globalDisplay;
-        XEvent event;
-        int32 queueLength;
-        while((queueLength = XPending(display)) > 0)
-        {
-            XNextEvent(display, &event);
-            PfWindow *eventWindow;
-            int32 findContextResult = XFindContext(display, event.xany.window, globalXlibContext, (XPointer*)&eventWindow);
-            ASSERT(findContextResult == 0);
-            
-            switch(event.type)
-            {
-                case EnterNotify:
-                case LeaveNotify:
-                {
-                    eventWindow->isWindowUnderMouse = (event.type == EnterNotify);
-                }break;
-                case FocusIn:
-                case FocusOut:
-                {
-                    eventWindow->hasKeyboardFocus = (event.type == FocusIn);
-                }break;
-                case ButtonPress:
-                case ButtonRelease:
-                {
-                    XButtonEvent buttonEvent = event.xbutton;
-                    int32 state = event.type == ButtonPress ? 1 : 0;
-                    int32 index = buttonEvent.button - 1;
-                    
-                    globalMouseButtons[index] = state;
-                }break;
-                case KeyPress:
-                case KeyRelease:
-                {
-                    XKeyEvent keyEvent = event.xkey;
-                    globalKeyboard[keyEvent.keycode] = (event.type == KeyPress) ? 1 : 0;
-                    
-                }break;
-                case ConfigureNotify:
-                {
-                    PfRect rect = PfGetClientRect(eventWindow);
-                    
-                    XConfigureEvent configureEvent = event.xconfigure;
-                    if(eventWindow->offscreenBuffer.width != configureEvent.width || eventWindow->offscreenBuffer.height != configureEvent.height)
-                    {
-                        PfResizeWindow(eventWindow, configureEvent.width, configureEvent.height);
-                    }
-                    
-                }break;
-                case DestroyNotify:
-                {
-                    
-                }break;
-                case ClientMessage:
-                {
-                    if(event.xclient.data.l[0] == globalWmDeleteWindowAtom) 
-                    {
-                        eventWindow->shouldClose = true;
-                        XDestroyWindow(display, eventWindow->windowHandle);
-                        break;
-                    }
-                }
-                default:
-                {
-                    
-                }break;
-            }
-        }
-#endif
-        
-#if PLATFORM_WINDOWS
-#define ALT_KEY VK_MENU
-#define ENTER_KEY VK_RETURN
-#elif PLATFORM_LINUX
-#define ALT_KEY XK_Alt_L
-#define ENTER_KEY XK_Return
-#endif
+        PfUpdate();
         
         static bool toggled = false;
-        if(PfGetKeyState(ALT_KEY) == 0 || PfGetKeyState(ENTER_KEY) == 0)
+        if(PfGetKeyState(PF_LEFT_ALT, true) == 0 || PfGetKeyState(PF_ENTER, true) == 0)
         {
             toggled = false;
         }
         
-        if(!toggled && PfGetKeyState(&window[0], ALT_KEY) && PfGetKeyState(&window[0], ENTER_KEY) != 0)
+        if(!toggled && PfGetKeyState(&window[0], PF_LEFT_ALT, true) && PfGetKeyState(&window[0], PF_ENTER, true) != 0)
         {
             toggled = true;
             PfToggleFullscreen(&window[0]);
             
         }
         
-        if(!toggled && PfGetKeyState(&window[1], ALT_KEY) && PfGetKeyState(&window[1], ENTER_KEY) != 0)
+        if(!toggled && PfGetKeyState(&window[1], PF_LEFT_ALT, true) && PfGetKeyState(&window[1], PF_ENTER, true) != 0)
         {
             toggled = true;
             PfToggleFullscreen(&window[1]);
@@ -400,7 +291,6 @@ int main()
             
             PfglSwapBuffers(&window[1]);
             
-            PfglMakeCurrent(0);
         }
 #endif
         
@@ -445,3 +335,4 @@ int main()
     return 0;
 }
 
+#endif
