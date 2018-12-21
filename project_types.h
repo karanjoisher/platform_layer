@@ -1,8 +1,9 @@
 #pragma once
 #include <stdint.h>
+
 #define global_variable static
 #define local_persist static
-#define internal static
+//#define internal static
 
 typedef int8_t int8;
 typedef int16_t int16;

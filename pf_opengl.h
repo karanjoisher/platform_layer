@@ -21,11 +21,11 @@ inline void glCheckErrors(char *functionName, char *file, int line)
     error = glGetError();
     while(error != GL_NO_ERROR)
     {
-        DEBUG_LOG(stderr, "[OPENGL_ERROR: %d], [FILE: %s], [LINE: %d], [FUNCTION: %s]\n", error, file, line, functionName); 
+        DEBUG_ERROR("[OPENGL_ERROR: %d]", error); 
         
         if((error = glGetError()) == GL_NO_ERROR)
         {
-            ASSERT(!"Encountered an error in openGL");
+            ASSERT(false, "Encountered an error in openGL");
         }
     }
 }
