@@ -2,14 +2,14 @@
 
 #define ARRAY_COUNT(Array) (sizeof(Array) / sizeof((Array)[0]))
 
-#if SLOW_BUILD | DEBUG_BUILD
-#define ASSERT(expression) if(!(expression)) *((int*)(0)) = 0;
+#if DEBUG_BUILD
+#define ASSERT(expression, assertMessage) if(!(expression)) fprintf(stderr, "ASSERTION FAILED: %s [LINE: %d, FUNCTION:%s, FILE:%s]\n",assertMessage, __LINE__, __func__, __FILE__), *((int*)(0)) = 0;
 #else
-#define ASSERT(expression)
+#define ASSERT(expression, assertMessage)
 #endif
 
 #if DEBUG_BUILD
-#define DEBUG_LOG(...) fprintf(__VA_ARGS__)
+#define DEBUG_LOG(...) fprintf(stdout, __VA_ARGS__)
 #else
 #define DEBUG_LOG(...) 
 #endif
@@ -20,3 +20,55 @@
 #else
 #define DEBUG_ERROR(...) 
 #endif
+
+
+bool AreStringsSame(char *str1, char *str2)
+{
+    bool result = true;
+    int i = 0;
+    
+    while(result)
+    {
+        result = str1[i] == str2[i];
+        if(str1[i] == 0 || str2[i] == 0)
+        {
+            break;
+        }
+        ++i;
+    }
+    
+    return result;
+}
+
+
+void Copy(char *destination, char*source, int sourceLength)
+{
+    for(int i = 0; i < sourceLength; i++)
+    {
+        *destination++ = *source++;
+    }
+}
+
+
+int GetElementIndex(int *array, int arrayLength, int element)
+{
+    int result = -1;
+    for(int i = 0; i < arrayLength; i++)
+    {
+        if(array[i] == element)
+        {
+            result = i;
+            break;
+        }
+    }
+    
+    return result;
+}
+
+void ClearArray(char *array, int size, char clearValue = 0)
+{
+    while(size--)
+    {
+        *array++ = clearValue;
+    }
+}
