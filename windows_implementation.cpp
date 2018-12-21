@@ -8,12 +8,272 @@
 #include "pf_opengl.h"
 
 global_variable WNDCLASS globalWindowClass;
-global_variable int32 globalKeyboard[256];
+global_variable int32 globalKeyboard[2][PF_ONE_PAST_LAST];
 global_variable int32 globalMouseButtons[5];
 global_variable int64 globalQueryPerformanceHZ;
 global_variable int32 globalGLMajorVersion = 3;
 global_variable int32 globalGLMinorVersion = 3;
 global_variable bool globalCoreProfile       = false;
+global_variable int globalScanCodesToPositionCodeMap[512];
+global_variable int globalWindowsVkCodeToPfVkCodeMap[256];
+global_variable char* globalWindowsVkCodeToStrMap[]= 
+{
+    "VK_NULL",
+    "VK_LBUTTON",
+    "VK_RBUTTON",
+    "VK_CANCEL",
+    "VK_MBUTTON",
+    "VK_XBUTTON1",
+    "VK_XBUTTON2",
+    "VK_UNDEFINED",
+    "VK_BACK",
+    "VK_TAB",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_CLEAR",
+    "VK_RETURN",
+    "VK_UNDEFINED",
+    "VK_UNDEFINED",
+    "VK_SHIFT",
+    "VK_CONTROL",
+    "VK_MENU",
+    "VK_PAUSE",
+    "VK_CAPITAL",
+    "VK_KANA_HANGUEL_HANGUL",
+    "VK_UNDEFINED",
+    "VK_JUNJA",
+    "VK_FINAL",
+    "VK_HANJA_KANJI",
+    "VK_UNDEFINED",
+    "VK_ESCAPE",
+    "VK_CONVERT",
+    "VK_NONCONVERT",
+    "VK_ACCEPT",
+    "VK_MODECHANGE",
+    "VK_SPACE",
+    "VK_PRIOR",
+    "VK_NEXT",
+    "VK_END",
+    "VK_HOME",
+    "VK_LEFT",
+    "VK_UP",
+    "VK_RIGHT",
+    "VK_DOWN",
+    "VK_SELECT",
+    "VK_PRINT",
+    "VK_EXECUTE",
+    "VK_SNAPSHOT",
+    "VK_INSERT",
+    "VK_DELETE",
+    "VK_HELP",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "VK_UNDEFINED",
+    "VK_UNDEFINED",
+    "VK_UNDEFINED",
+    "VK_UNDEFINED",
+    "VK_UNDEFINED",
+    "VK_UNDEFINED",
+    "VK_UNDEFINED",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+    "VK_LWIN",
+    "VK_RWIN",
+    "VK_APPS",
+    "VK_RESERVED",
+    "VK_SLEEP",
+    "VK_NUMPAD0",
+    "VK_NUMPAD1",
+    "VK_NUMPAD2",
+    "VK_NUMPAD3",
+    "VK_NUMPAD4",
+    "VK_NUMPAD5",
+    "VK_NUMPAD6",
+    "VK_NUMPAD7",
+    "VK_NUMPAD8", 
+    "VK_NUMPAD9",
+    "VK_MULTIPLY",
+    "VK_ADD",
+    "VK_SEPARATOR",
+    "VK_SUBTRACT", 
+    "VK_DECIMAL",	
+    "VK_DIVIDE",	
+    "VK_F1",
+    "VK_F2",
+    "VK_F3",
+    "VK_F4",
+    "VK_F5",
+    "VK_F6", 
+    "VK_F7", 
+    "VK_F8",
+    "VK_F9", 
+    "VK_F10",
+    "VK_F11",
+    "VK_F12",
+    "VK_F13",
+    "VK_F14",
+    "VK_F15",
+    "VK_F16",
+    "VK_F17",
+    "VK_F18",
+    "VK_F19",
+    "VK_F20",
+    "VK_F21",
+    "VK_F22",
+    "VK_F23",
+    "VK_F24",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_NUMLOCK",
+    "VK_SCROLL",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_LSHIFT",	
+    "VK_RSHIFT",	
+    "VK_LCONTROL",	
+    "VK_RCONTROL",	
+    "VK_LMENU",	
+    "VK_RMENU",	
+    "VK_BROWSER_BACK",
+    "VK_BROWSER_FORWARD",
+    "VK_BROWSER_REFRESH",
+    "VK_BROWSER_STOP",	
+    "VK_BROWSER_SEARCH",	
+    "VK_BROWSER_FAVORITES", 
+    "VK_BROWSER_HOME",
+    "VK_VOLUME_MUTE",
+    "VK_VOLUME_DOWN",
+    "VK_VOLUME_UP",	
+    "VK_MEDIA_NEXT_TRACK", 
+    "VK_MEDIA_PREV_TRACK",
+    "VK_MEDIA_STOP",
+    "VK_MEDIA_PLAY_PAUSE",
+    "VK_LAUNCH_MAIL",
+    "VK_LAUNCH_MEDIA_SELECT",
+    "VK_LAUNCH_APP1",	
+    "VK_LAUNCH_APP2",	
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_OEM_SEMICOLON",
+    "VK_OEM_PLUS",
+    "VK_OEM_COMMA",
+    "VK_OEM_MINUS",
+    "VK_OEM_PERIOD",	
+    "VK_OEM_FORWARD_SLASH",
+    "VK_OEM_TILDE",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_RESERVED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_UNASSIGNED",
+    "VK_OEM_OPEN_SQUARE_BRACKET",
+    "VK_OEM_BACK_SLASH",
+    "VK_OEM_CLOSE_SQUARE_BRACKET",
+    "VK_OEM_APOSTROPHE",	
+    "VK_OEM_8",
+    "VK_RESERVED",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_ANGULAR_OR_BACKSLASH",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_PROCESSKEY",
+    "VK_OEM_SPECIFIC",
+    "VK_PACKET",	
+    "VK_UNASSIGNED",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_OEM_SPECIFIC",
+    "VK_ATTN",
+    "VK_CRSEL",
+    "VK_EXSEL",
+    "VK_EREOF",
+    "VK_PLAY",
+    "VK_ZOOM",
+    "VK_NONAME",
+    "VK_PA1",
+    "VK_OEM_CLEAR"
+};
 
 /********* WGL specific stuff *******/
 
@@ -45,6 +305,7 @@ global_variable type_wglGetExtensionsStringARB* wglGetExtensionsStringARB;
 global_variable type_wglChoosePixelFormatARB* wglChoosePixelFormatARB;
 global_variable type_wglCreateContextAttribsARB* wglCreateContextAttribsARB;
 
+
 LRESULT CALLBACK WinWindowCallback(HWND windowHandle, UINT message, WPARAM wParam, LPARAM lParam)
 {
     /* NOTE(KARAN): Windows sends us two types of messages: Queued and non queued.
@@ -63,32 +324,116 @@ LRESULT CALLBACK WinWindowCallback(HWND windowHandle, UINT message, WPARAM wPara
             result = DefWindowProc(windowHandle, message, wParam, lParam); 
         }break;
         case WM_SETFOCUS:
-        {
-            if(window) window->hasKeyboardFocus = true;
-        }break;
         case WM_KILLFOCUS:
         {
-            if(window) window->hasKeyboardFocus = false;
+            if(window) window->hasKeyboardFocus = (message == WM_SETFOCUS);
+#if 1
+            /*
+                        if(message == WM_SETFOCUS)
+                        {*/
+            for(int scanCode = 0; scanCode < ARRAY_COUNT(globalScanCodesToPositionCodeMap); scanCode++)
+            {
+                PfKeyCode positionCode = (PfKeyCode)globalScanCodesToPositionCodeMap[scanCode];
+                if(positionCode != PF_NULL)
+                {
+                    int extendedScanCode = scanCode;
+                    if(extendedScanCode & 0x0100)
+                    {
+                        extendedScanCode = extendedScanCode & 0x0FF;
+                        extendedScanCode = extendedScanCode | 0xE000;
+                    }
+                    int vkCode = MapVirtualKeyEx(extendedScanCode, MAPVK_VSC_TO_VK_EX, 0);
+                    uint16 keyState = GetAsyncKeyState(vkCode);
+                    
+                    bool isDown = (keyState & 0x08000) != 0;
+                    globalKeyboard[0][positionCode] = isDown;
+                }
+            }
+            
+            for(int vkCode = 0; vkCode < ARRAY_COUNT(globalWindowsVkCodeToPfVkCodeMap); vkCode++)
+            {
+                PfKeyCode pfVkCode = (PfKeyCode)globalWindowsVkCodeToPfVkCodeMap[vkCode];
+                if(pfVkCode != PF_NULL)
+                {
+                    uint16 keyState = GetAsyncKeyState(vkCode);
+                    
+                    bool isDown = (keyState & 0x08000) != 0;
+                    globalKeyboard[1][pfVkCode] = isDown;
+                }
+            }
+            /*}
+            else
+            {
+                ClearArray((char*)globalKeyboard, sizeof(globalKeyboard));
+            }*/
+#endif
         }break;
-        
         case WM_KEYUP:
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
         case WM_SYSKEYUP:
         {
-            // TODO(KARAN): Separate keyboard updating from this callback
+            int32 scanCode = (lParam >> 16) & 0x07F;
             WPARAM vkCode = wParam;
             
+            // TODO(KARAN): Separate keyboard updating from this callback
+            
             int32 repeatCount = lParam & 0x07FFF;
-            int32 scanCode = (lParam >> 16) & 0x07F;
             int32 isExtendedKey = (lParam >> 23) & 0x01;
+            
             int32 reserved = (lParam >> 25) & 0x07;
             int32 isAltDown = (lParam >> 29) & 0x01;
             
             bool wasKeyDown = ((lParam >> 30) & 0x01) != 0;
             bool isKeyDown = ((lParam >> 31) & 0x01) == 0;
             
-            globalKeyboard[vkCode] = isKeyDown;
+            int32 extendedScanCode = (lParam >> 16) & 0x01FF;
+            
+            int tempKeyState = isKeyDown ? 0x8000 : 0;
+            if(vkCode == VK_SHIFT)
+            {
+                vkCode = VK_LSHIFT;
+                uint16 keyState = GetKeyState((int32)vkCode);
+                if((keyState & 0x8000) != tempKeyState)
+                {
+                    vkCode = VK_RSHIFT;
+                }
+            }
+            else if(vkCode == VK_CONTROL)
+            {
+                vkCode = VK_LCONTROL;
+                uint16 keyState = GetKeyState((int32)vkCode);
+                if((keyState & 0x8000) != tempKeyState)
+                {
+                    vkCode = VK_RCONTROL;
+                }
+            }
+            else if(vkCode == VK_MENU)
+            {
+                vkCode = VK_LMENU;
+                uint16 keyState = GetKeyState((int32)vkCode);
+                if((keyState & 0x8000) != tempKeyState)
+                {
+                    vkCode = VK_RMENU;
+                }
+            }
+            
+            int32 positionCodeIndex = globalScanCodesToPositionCodeMap[extendedScanCode];
+            int32 vkCodeIndex = globalWindowsVkCodeToPfVkCodeMap[vkCode];
+            
+            globalKeyboard[1][vkCodeIndex] = isKeyDown;
+            globalKeyboard[0][positionCodeIndex] = isKeyDown;
+            
+#if 0
+            if(message == WM_KEYDOWN || message == WM_SYSKEYDOWN)
+            {
+                char str[512] = {};
+                if(GetKeyNameTextA((LONG)lParam, str, 512))
+                {
+                    DEBUG_LOG("PositionCode: %s | PfVkCode: %s | WinVkCode: %s | ExtendedScanCode: %03x\n", globalPfKeyCodeToStrMap[positionCodeIndex], globalPfKeyCodeToStrMap[vkCodeIndex], globalWindowsVkCodeToStrMap[vkCode], extendedScanCode);
+                }
+            }
+#endif
             
             if(vkCode == VK_LBUTTON)
             {
@@ -113,6 +458,11 @@ LRESULT CALLBACK WinWindowCallback(HWND windowHandle, UINT message, WPARAM wPara
             if(vkCode == VK_XBUTTON2)
             {
                 globalMouseButtons[4] = isKeyDown;
+            }
+            
+            if(message == WM_SYSKEYUP || message == WM_SYSKEYDOWN)
+            {
+                result = DefWindowProc(windowHandle, message, wParam, lParam); 
             }
             
         }break;
@@ -146,21 +496,28 @@ LRESULT CALLBACK WinWindowCallback(HWND windowHandle, UINT message, WPARAM wPara
 
 void PfInitialize()
 {
+    // 1. Set up sleep timer resolution
+    // 2. Get Query Performance Counter 
+    // 3. Register Window Class
+    // 4. Get WGL extensions and load opengl functions
+    // 5. KeyCodes setup
     
-    //// Setting the resolution of sleep timer
+    //// 1. Set up sleep timer resolution
     UINT sleepResolution = 1; //ms
     if(timeBeginPeriod(sleepResolution) != TIMERR_NOERROR)
     {
         DEBUG_ERROR("Could not set the resolution of sleep timer"); 
     }
     
+    //// 2. Get Query Performance Counter Frequency
     LARGE_INTEGER queryPerformanceHZResult;
     
     BOOL result = QueryPerformanceFrequency(&queryPerformanceHZResult);
-    ASSERT(result != 0);
+    ASSERT(result != 0, "Failed to get performance counter frequency");
     
     globalQueryPerformanceHZ  = queryPerformanceHZResult.QuadPart;
     
+    //// 3. Register Window Class
     // NOTE(KARAN): CS_OWNDC necessary for OpenGL context creation
     globalWindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     globalWindowClass.lpfnWndProc = WinWindowCallback;
@@ -171,7 +528,7 @@ void PfInitialize()
         fprintf(stderr,"ERROR: Could not register window class. LINE: %d, FUNCTION:%s, FILE:%s\n", __LINE__, __func__, __FILE__);
     }
     
-    /***** Get WGL extensions and load opengl functions  ******/
+    //// 4. Get WGL extensions and load opengl functions
     
     PfWindow dummyWindow = {};
     WNDCLASS dummyWindowClass = {};
@@ -180,25 +537,16 @@ void PfInitialize()
     dummyWindowClass.hInstance = GetModuleHandle(0);
     dummyWindowClass.lpszClassName = "DummyWindowClass";
     
-    if(RegisterClassA(&dummyWindowClass) == 0)
-    {
-        DEBUG_ERROR("Could not register dummy window class.");
-        ASSERT(!"Couldn't register dummy window class");
-    }
+    ATOM registerSuccess = RegisterClassA(&dummyWindowClass);
+    ASSERT(registerSuccess, "Couldn't register dummy window class");
     
     dummyWindow.windowHandle = CreateWindowEx(0, dummyWindowClass.lpszClassName, "Dummy Window", WS_OVERLAPPEDWINDOW, 
                                               CW_USEDEFAULT, CW_USEDEFAULT,
                                               CW_USEDEFAULT, CW_USEDEFAULT,
                                               0, 0, dummyWindowClass.hInstance, 0);
+    ASSERT(dummyWindow.windowHandle, "Couldn't create dummy window");
     
-    if(dummyWindow.windowHandle == 0)
-    {
-        DEBUG_ERROR("Could not create dummy window.");
-        
-        ASSERT(!"Couldn't create dummy window");
-    }
     dummyWindow.deviceContext = GetDC(dummyWindow.windowHandle);
-    
     PIXELFORMATDESCRIPTOR desiredPixelFormat =
     {
         sizeof(PIXELFORMATDESCRIPTOR), 1,
@@ -215,44 +563,552 @@ void PfInitialize()
     };
     
     int32 closestPixelFormatIndex = ChoosePixelFormat(dummyWindow.deviceContext, &desiredPixelFormat);
-    ASSERT(closestPixelFormatIndex);
+    ASSERT(closestPixelFormatIndex, "Couldn't find desired pixel format");
     /*
 An application can only set the pixel format of a window one time. 
 Once a window's pixel format is set, it cannot be changed.
 */
     BOOL setPixelFormatSuccess = SetPixelFormat(dummyWindow.deviceContext, closestPixelFormatIndex, &desiredPixelFormat);
-    ASSERT(setPixelFormatSuccess == TRUE);
+    ASSERT(setPixelFormatSuccess == TRUE, "Couldn't set window DC's pixel format");
     
     dummyWindow.glContext = wglCreateContext(dummyWindow.deviceContext);
-    ASSERT(dummyWindow.glContext);
+    ASSERT(dummyWindow.glContext, "Couldn't create dummy OpenGL context");
     
     BOOL makeCurrentSuccess = wglMakeCurrent(dummyWindow.deviceContext, dummyWindow.glContext);
-    ASSERT(makeCurrentSuccess == TRUE);
+    ASSERT(makeCurrentSuccess == TRUE, "Couldn't make dummy OpenGL context current");
     
     GrabOpenGLFuncPointers();
     
     wglGetExtensionsStringARB = (type_wglGetExtensionsStringARB*)wglGetProcAddress("wglGetExtensionsStringARB");
-    ASSERT(wglGetExtensionsStringARB);
     
     const char *wglExtensions = wglGetExtensionsStringARB(dummyWindow.deviceContext);
-    //DEBUG_LOG(stdout, "WGL extensions: %s\n", wglExtensions);
     
     // TODO(KARAN): Part of WGL_ARB_pixel_format extension
     wglChoosePixelFormatARB = (type_wglChoosePixelFormatARB*)wglGetProcAddress("wglChoosePixelFormatARB");
-    ASSERT(wglChoosePixelFormatARB);
     
     // TODO(KARAN): Part of WGL_ARB_create_context extension
     wglCreateContextAttribsARB = (type_wglCreateContextAttribsARB*)wglGetProcAddress("wglCreateContextAttribsARB");
-    ASSERT(wglCreateContextAttribsARB);
     
     BOOL deleteSuccess = wglDeleteContext(dummyWindow.glContext);
-    ASSERT(deleteSuccess == TRUE);
     
     deleteSuccess = ReleaseDC(dummyWindow.windowHandle, dummyWindow.deviceContext);
-    ASSERT(deleteSuccess == 1);
     
     deleteSuccess = DestroyWindow(dummyWindow.windowHandle);
-    ASSERT(deleteSuccess == TRUE);
+    
+    //// 5. KeyCodes setup
+    
+    // Position Code Mapping: https://docs.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-6.0/aa299374(v=vs.60)
+    globalScanCodesToPositionCodeMap[0] = PF_NULL;
+    globalScanCodesToPositionCodeMap[1] = PF_ESC;
+    globalScanCodesToPositionCodeMap[59] = PF_F1;
+    globalScanCodesToPositionCodeMap[60] = PF_F2;
+    globalScanCodesToPositionCodeMap[61] = PF_F3;
+    globalScanCodesToPositionCodeMap[62] = PF_F4;
+    globalScanCodesToPositionCodeMap[63] = PF_F5;
+    globalScanCodesToPositionCodeMap[64] = PF_F6;
+    globalScanCodesToPositionCodeMap[65] = PF_F7;
+    globalScanCodesToPositionCodeMap[66] = PF_F8;
+    globalScanCodesToPositionCodeMap[67] = PF_F9;
+    globalScanCodesToPositionCodeMap[68] = PF_F10;
+    globalScanCodesToPositionCodeMap[87] = PF_F11;
+    globalScanCodesToPositionCodeMap[88] = PF_F12;
+    globalScanCodesToPositionCodeMap[311] = PF_PRINT_SCREEN;
+    globalScanCodesToPositionCodeMap[70] = PF_SCROLL_LOCK;
+    globalScanCodesToPositionCodeMap[69] = PF_PAUSE;
+    globalScanCodesToPositionCodeMap[326] = PF_PAUSE;
+    
+    globalScanCodesToPositionCodeMap[41] = PF_TILDE;
+    globalScanCodesToPositionCodeMap[2] = PF_1;
+    globalScanCodesToPositionCodeMap[3] = PF_2;
+    globalScanCodesToPositionCodeMap[4] = PF_3;
+    globalScanCodesToPositionCodeMap[5] = PF_4;
+    globalScanCodesToPositionCodeMap[6] = PF_5;
+    globalScanCodesToPositionCodeMap[7] = PF_6;
+    globalScanCodesToPositionCodeMap[8] = PF_7;
+    globalScanCodesToPositionCodeMap[9] = PF_8;
+    globalScanCodesToPositionCodeMap[10] = PF_9;
+    globalScanCodesToPositionCodeMap[11] = PF_0;
+    globalScanCodesToPositionCodeMap[12] = PF_MINUS;
+    globalScanCodesToPositionCodeMap[13] = PF_EQUALS;
+    globalScanCodesToPositionCodeMap[14] = PF_BACKSPACE;
+    
+    globalScanCodesToPositionCodeMap[15] = PF_TAB;
+    globalScanCodesToPositionCodeMap[16] = PF_Q;
+    globalScanCodesToPositionCodeMap[17] = PF_W;
+    globalScanCodesToPositionCodeMap[18] = PF_E;
+    globalScanCodesToPositionCodeMap[19] = PF_R;
+    globalScanCodesToPositionCodeMap[20] = PF_T;
+    globalScanCodesToPositionCodeMap[21] = PF_Y;
+    globalScanCodesToPositionCodeMap[22] = PF_U;
+    globalScanCodesToPositionCodeMap[23] = PF_I;
+    globalScanCodesToPositionCodeMap[24] = PF_O;
+    globalScanCodesToPositionCodeMap[25] = PF_P;
+    globalScanCodesToPositionCodeMap[26] = PF_OPEN_SQUARE_BRACKET;
+    globalScanCodesToPositionCodeMap[27] = PF_CLOSE_SQUARE_BRACKET;
+    globalScanCodesToPositionCodeMap[43] = PF_BACKSLASH;
+    
+    globalScanCodesToPositionCodeMap[58] = PF_CAPS_LOCK;
+    globalScanCodesToPositionCodeMap[30] = PF_A;
+    globalScanCodesToPositionCodeMap[31] = PF_S;
+    globalScanCodesToPositionCodeMap[32] = PF_D;
+    globalScanCodesToPositionCodeMap[33] = PF_F;
+    globalScanCodesToPositionCodeMap[34] = PF_G;
+    globalScanCodesToPositionCodeMap[35] = PF_H;
+    globalScanCodesToPositionCodeMap[36] = PF_J;
+    globalScanCodesToPositionCodeMap[37] = PF_K;
+    globalScanCodesToPositionCodeMap[38] = PF_L;
+    globalScanCodesToPositionCodeMap[39] = PF_SEMICOLON;
+    globalScanCodesToPositionCodeMap[40] = PF_APOSTROPHE;
+    globalScanCodesToPositionCodeMap[28] = PF_ENTER;
+    
+    globalScanCodesToPositionCodeMap[42] = PF_LEFT_SHIFT;
+    globalScanCodesToPositionCodeMap[44] = PF_Z;
+    globalScanCodesToPositionCodeMap[45] = PF_X;
+    globalScanCodesToPositionCodeMap[46] = PF_C;
+    globalScanCodesToPositionCodeMap[47] = PF_V;
+    globalScanCodesToPositionCodeMap[48] = PF_B;
+    globalScanCodesToPositionCodeMap[49] = PF_N;
+    globalScanCodesToPositionCodeMap[50] = PF_M;
+    globalScanCodesToPositionCodeMap[51] = PF_COMMA;
+    globalScanCodesToPositionCodeMap[52] = PF_PERIOD;
+    globalScanCodesToPositionCodeMap[53] = PF_FORWARD_SLASH;
+    globalScanCodesToPositionCodeMap[54] = PF_RIGHT_SHIFT;
+    
+    globalScanCodesToPositionCodeMap[29] = PF_LEFT_CTRL;
+    globalScanCodesToPositionCodeMap[347] = PF_LEFT_WIN;
+    globalScanCodesToPositionCodeMap[56] = PF_LEFT_ALT;
+    globalScanCodesToPositionCodeMap[57] = PF_SPACEBAR;
+    globalScanCodesToPositionCodeMap[312] = PF_RIGHT_ALT;
+    globalScanCodesToPositionCodeMap[348] = PF_RIGHT_WIN;
+    globalScanCodesToPositionCodeMap[349] = PF_MENU;
+    globalScanCodesToPositionCodeMap[285] = PF_RIGHT_CTRL;
+    
+    globalScanCodesToPositionCodeMap[338] = PF_INSERT;
+    globalScanCodesToPositionCodeMap[327] = PF_HOME;
+    globalScanCodesToPositionCodeMap[329] = PF_PAGE_UP;
+    globalScanCodesToPositionCodeMap[339] = PF_DELETE;
+    globalScanCodesToPositionCodeMap[335] = PF_END;
+    globalScanCodesToPositionCodeMap[337] = PF_PAGE_DOWN;
+    
+    globalScanCodesToPositionCodeMap[328] = PF_UP;
+    globalScanCodesToPositionCodeMap[336] = PF_DOWN;
+    globalScanCodesToPositionCodeMap[331] = PF_LEFT;
+    globalScanCodesToPositionCodeMap[333] = PF_RIGHT;
+    
+    globalScanCodesToPositionCodeMap[325] = PF_NUM_LOCK;
+    globalScanCodesToPositionCodeMap[309] = PF_NUMPAD_DIVIDE;
+    globalScanCodesToPositionCodeMap[55] = PF_NUMPAD_MULTIPLY;
+    globalScanCodesToPositionCodeMap[74] = PF_NUMPAD_MINUS;
+    globalScanCodesToPositionCodeMap[71] = PF_NUMPAD_7;
+    globalScanCodesToPositionCodeMap[72] = PF_NUMPAD_8;
+    globalScanCodesToPositionCodeMap[73] = PF_NUMPAD_9;
+    globalScanCodesToPositionCodeMap[78] = PF_NUMPAD_PLUS;
+    globalScanCodesToPositionCodeMap[75] = PF_NUMPAD_4;
+    globalScanCodesToPositionCodeMap[76] = PF_NUMPAD_5;
+    globalScanCodesToPositionCodeMap[77] = PF_NUMPAD_6;
+    globalScanCodesToPositionCodeMap[79] = PF_NUMPAD_1;
+    globalScanCodesToPositionCodeMap[80] = PF_NUMPAD_2;
+    globalScanCodesToPositionCodeMap[81] = PF_NUMPAD_3;
+    globalScanCodesToPositionCodeMap[82] = PF_NUMPAD_0;
+    globalScanCodesToPositionCodeMap[83] = PF_NUMPAD_PERIOD;
+    globalScanCodesToPositionCodeMap[284] = PF_NUMPAD_ENTER;
+    
+    // Virtual code mapping
+    globalWindowsVkCodeToPfVkCodeMap[0] = PF_NULL;
+    globalWindowsVkCodeToPfVkCodeMap[VK_ESCAPE] = PF_ESC;
+    globalWindowsVkCodeToPfVkCodeMap[VK_F1] = PF_F1;
+    globalWindowsVkCodeToPfVkCodeMap[VK_F2] = PF_F2;
+    globalWindowsVkCodeToPfVkCodeMap[VK_F3] = PF_F3;
+    globalWindowsVkCodeToPfVkCodeMap[VK_F4] = PF_F4;
+    globalWindowsVkCodeToPfVkCodeMap[VK_F5] = PF_F5;
+    globalWindowsVkCodeToPfVkCodeMap[VK_F6] = PF_F6;
+    globalWindowsVkCodeToPfVkCodeMap[VK_F7] = PF_F7;
+    globalWindowsVkCodeToPfVkCodeMap[VK_F8] = PF_F8;
+    globalWindowsVkCodeToPfVkCodeMap[VK_F9] = PF_F9;
+    globalWindowsVkCodeToPfVkCodeMap[VK_F10] = PF_F10;
+    globalWindowsVkCodeToPfVkCodeMap[VK_F11] = PF_F11;
+    globalWindowsVkCodeToPfVkCodeMap[VK_F12] = PF_F12;
+    globalWindowsVkCodeToPfVkCodeMap[VK_PRINT] = PF_PRINT_SCREEN;
+    globalWindowsVkCodeToPfVkCodeMap[VK_SCROLL] = PF_SCROLL_LOCK;
+    globalWindowsVkCodeToPfVkCodeMap[VK_PAUSE] = PF_PAUSE;
+    
+    globalWindowsVkCodeToPfVkCodeMap[VK_OEM_3] = PF_TILDE;
+    globalWindowsVkCodeToPfVkCodeMap[49] = PF_1;
+    globalWindowsVkCodeToPfVkCodeMap[50] = PF_2;
+    globalWindowsVkCodeToPfVkCodeMap[51] = PF_3;
+    globalWindowsVkCodeToPfVkCodeMap[52] = PF_4;
+    globalWindowsVkCodeToPfVkCodeMap[53] = PF_5;
+    globalWindowsVkCodeToPfVkCodeMap[54] = PF_6;
+    globalWindowsVkCodeToPfVkCodeMap[55] = PF_7;
+    globalWindowsVkCodeToPfVkCodeMap[56] = PF_8;
+    globalWindowsVkCodeToPfVkCodeMap[57] = PF_9;
+    globalWindowsVkCodeToPfVkCodeMap[48] = PF_0;
+    globalWindowsVkCodeToPfVkCodeMap[VK_OEM_MINUS] = PF_MINUS;
+    globalWindowsVkCodeToPfVkCodeMap[VK_OEM_PLUS] = PF_EQUALS;
+    globalWindowsVkCodeToPfVkCodeMap[VK_BACK] = PF_BACKSPACE;
+    
+    globalWindowsVkCodeToPfVkCodeMap[VK_TAB] = PF_TAB;
+    globalWindowsVkCodeToPfVkCodeMap['Q'] = PF_Q;
+    globalWindowsVkCodeToPfVkCodeMap['W'] = PF_W;
+    globalWindowsVkCodeToPfVkCodeMap['E'] = PF_E;
+    globalWindowsVkCodeToPfVkCodeMap['R'] = PF_R;
+    globalWindowsVkCodeToPfVkCodeMap['T'] = PF_T;
+    globalWindowsVkCodeToPfVkCodeMap['Y'] = PF_Y;
+    globalWindowsVkCodeToPfVkCodeMap['U'] = PF_U;
+    globalWindowsVkCodeToPfVkCodeMap['I'] = PF_I;
+    globalWindowsVkCodeToPfVkCodeMap['O'] = PF_O;
+    globalWindowsVkCodeToPfVkCodeMap['P'] = PF_P;
+    globalWindowsVkCodeToPfVkCodeMap[VK_OEM_4] = PF_OPEN_SQUARE_BRACKET;
+    globalWindowsVkCodeToPfVkCodeMap[VK_OEM_6] = PF_CLOSE_SQUARE_BRACKET;
+    globalWindowsVkCodeToPfVkCodeMap[VK_OEM_5] = PF_BACKSLASH;
+    
+    globalWindowsVkCodeToPfVkCodeMap[VK_CAPITAL] = PF_CAPS_LOCK;
+    globalWindowsVkCodeToPfVkCodeMap['A'] = PF_A;
+    globalWindowsVkCodeToPfVkCodeMap['S'] = PF_S;
+    globalWindowsVkCodeToPfVkCodeMap['D'] = PF_D;
+    globalWindowsVkCodeToPfVkCodeMap['F'] = PF_F;
+    globalWindowsVkCodeToPfVkCodeMap['G'] = PF_G;
+    globalWindowsVkCodeToPfVkCodeMap['H'] = PF_H;
+    globalWindowsVkCodeToPfVkCodeMap['J'] = PF_J;
+    globalWindowsVkCodeToPfVkCodeMap['K'] = PF_K;
+    globalWindowsVkCodeToPfVkCodeMap['L'] = PF_L;
+    globalWindowsVkCodeToPfVkCodeMap[VK_OEM_1] = PF_SEMICOLON;
+    globalWindowsVkCodeToPfVkCodeMap[VK_OEM_7] = PF_APOSTROPHE;
+    globalWindowsVkCodeToPfVkCodeMap[VK_RETURN] = PF_ENTER;
+    
+    globalWindowsVkCodeToPfVkCodeMap[VK_LSHIFT] = PF_LEFT_SHIFT;
+    globalWindowsVkCodeToPfVkCodeMap['Z'] = PF_Z;
+    globalWindowsVkCodeToPfVkCodeMap['X'] = PF_X;
+    globalWindowsVkCodeToPfVkCodeMap['C'] = PF_C;
+    globalWindowsVkCodeToPfVkCodeMap['V'] = PF_V;
+    globalWindowsVkCodeToPfVkCodeMap['B'] = PF_B;
+    globalWindowsVkCodeToPfVkCodeMap['N'] = PF_N;
+    globalWindowsVkCodeToPfVkCodeMap['M'] = PF_M;
+    globalWindowsVkCodeToPfVkCodeMap[VK_OEM_COMMA] = PF_COMMA;
+    globalWindowsVkCodeToPfVkCodeMap[VK_OEM_PERIOD] = PF_PERIOD;
+    globalWindowsVkCodeToPfVkCodeMap[VK_OEM_2] = PF_FORWARD_SLASH;
+    globalWindowsVkCodeToPfVkCodeMap[VK_RSHIFT] = PF_RIGHT_SHIFT;
+    
+    globalWindowsVkCodeToPfVkCodeMap[VK_LCONTROL] = PF_LEFT_CTRL;
+    globalWindowsVkCodeToPfVkCodeMap[VK_LWIN] = PF_LEFT_WIN;
+    globalWindowsVkCodeToPfVkCodeMap[VK_LMENU] = PF_LEFT_ALT;
+    globalWindowsVkCodeToPfVkCodeMap[VK_SPACE] = PF_SPACEBAR;
+    globalWindowsVkCodeToPfVkCodeMap[VK_RMENU] = PF_RIGHT_ALT;
+    globalWindowsVkCodeToPfVkCodeMap[VK_RWIN] = PF_RIGHT_WIN;
+    //TODO(KARAN)] VkCode for PF_MENU?? globalWindowsVkCodeToPfVkCodeMap[VK_] = PF_MENU;
+    globalWindowsVkCodeToPfVkCodeMap[VK_RCONTROL] = PF_RIGHT_CTRL;
+    
+    globalWindowsVkCodeToPfVkCodeMap[VK_INSERT] = PF_INSERT;
+    globalWindowsVkCodeToPfVkCodeMap[VK_HOME] = PF_HOME;
+    globalWindowsVkCodeToPfVkCodeMap[VK_PRIOR] = PF_PAGE_UP;
+    globalWindowsVkCodeToPfVkCodeMap[VK_DELETE] = PF_DELETE;
+    globalWindowsVkCodeToPfVkCodeMap[VK_END] = PF_END;
+    globalWindowsVkCodeToPfVkCodeMap[VK_NEXT] = PF_PAGE_DOWN;
+    globalWindowsVkCodeToPfVkCodeMap[VK_CLEAR] = PF_CLEAR;
+    
+    globalWindowsVkCodeToPfVkCodeMap[VK_UP] = PF_UP;
+    globalWindowsVkCodeToPfVkCodeMap[VK_DOWN] = PF_DOWN;
+    globalWindowsVkCodeToPfVkCodeMap[VK_LEFT] = PF_LEFT;
+    globalWindowsVkCodeToPfVkCodeMap[VK_RIGHT] = PF_RIGHT;
+    
+    globalWindowsVkCodeToPfVkCodeMap[VK_NUMLOCK] = PF_NUM_LOCK;
+    globalWindowsVkCodeToPfVkCodeMap[VK_DIVIDE] = PF_NUMPAD_DIVIDE;
+    globalWindowsVkCodeToPfVkCodeMap[VK_MULTIPLY] = PF_NUMPAD_MULTIPLY;
+    globalWindowsVkCodeToPfVkCodeMap[VK_SUBTRACT] = PF_NUMPAD_MINUS;
+    globalWindowsVkCodeToPfVkCodeMap[VK_NUMPAD7] = PF_NUMPAD_7;
+    globalWindowsVkCodeToPfVkCodeMap[VK_NUMPAD8] = PF_NUMPAD_8;
+    globalWindowsVkCodeToPfVkCodeMap[VK_NUMPAD9] = PF_NUMPAD_9;
+    globalWindowsVkCodeToPfVkCodeMap[VK_ADD] = PF_NUMPAD_PLUS;
+    globalWindowsVkCodeToPfVkCodeMap[VK_NUMPAD4] = PF_NUMPAD_4;
+    globalWindowsVkCodeToPfVkCodeMap[VK_NUMPAD5] = PF_NUMPAD_5;
+    globalWindowsVkCodeToPfVkCodeMap[VK_NUMPAD6] = PF_NUMPAD_6;
+    globalWindowsVkCodeToPfVkCodeMap[VK_NUMPAD1] = PF_NUMPAD_1;
+    globalWindowsVkCodeToPfVkCodeMap[VK_NUMPAD2] = PF_NUMPAD_2;
+    globalWindowsVkCodeToPfVkCodeMap[VK_NUMPAD3] = PF_NUMPAD_3;
+    globalWindowsVkCodeToPfVkCodeMap[VK_NUMPAD0] = PF_NUMPAD_0;
+    globalWindowsVkCodeToPfVkCodeMap[VK_DECIMAL] = PF_NUMPAD_PERIOD;
+    
+    
+#if 0
+    // For every virtual keycode, find a scan code.
+    for(int i = 0; i < 256; i++)
+    {
+        uint32 vkCode = i;
+        PfKeyCode pfVirtualKeyCode = PF_NULL;
+        switch(vkCode)
+        {
+            case 0: symbolicKeyCode = PF_NULL; break;
+            case VK_ESCAPE: symbolicKeyCode = PF_ESC; break;
+            case VK_F1: symbolicKeyCode = PF_F1; break;
+            case VK_F2: symbolicKeyCode = PF_F2; break;
+            case VK_F3: symbolicKeyCode = PF_F3; break;
+            case VK_F4: symbolicKeyCode = PF_F4; break;
+            case VK_F5: symbolicKeyCode = PF_F5; break;
+            case VK_F6: symbolicKeyCode = PF_F6; break;
+            case VK_F7: symbolicKeyCode = PF_F7; break;
+            case VK_F8: symbolicKeyCode = PF_F8; break;
+            case VK_F9: symbolicKeyCode = PF_F9; break;
+            case VK_F10: symbolicKeyCode = PF_F10; break;
+            case VK_F11: symbolicKeyCode = PF_F11; break;
+            case VK_F12: symbolicKeyCode = PF_F12; break;
+            case VK_PRINT: symbolicKeyCode = PF_PRINT_SCREEN; break;
+            case VK_SCROLL: symbolicKeyCode = PF_SCROLL_LOCK; break;
+            case VK_PAUSE: symbolicKeyCode = PF_PAUSE; break;
+            
+            case VK_OEM_3: symbolicKeyCode = PF_TILDE; break;
+            case 49: symbolicKeyCode = PF_1; break;
+            case 50: symbolicKeyCode = PF_2; break;
+            case 51: symbolicKeyCode = PF_3; break;
+            case 52: symbolicKeyCode = PF_4; break;
+            case 53: symbolicKeyCode = PF_5; break;
+            case 54: symbolicKeyCode = PF_6; break;
+            case 55: symbolicKeyCode = PF_7; break;
+            case 56: symbolicKeyCode = PF_8; break;
+            case 57: symbolicKeyCode = PF_9; break;
+            case 48: symbolicKeyCode = PF_0; break;
+            case VK_OEM_MINUS: symbolicKeyCode = PF_MINUS; break;
+            case VK_OEM_PLUS: symbolicKeyCode = PF_EQUALS; break;
+            case VK_BACK: symbolicKeyCode = PF_BACKSPACE; break;
+            
+            case VK_TAB: symbolicKeyCode = PF_TAB; break;
+            case 'Q': symbolicKeyCode = PF_Q; break;
+            case 'W': symbolicKeyCode = PF_W; break;
+            case 'E': symbolicKeyCode = PF_E; break;
+            case 'R': symbolicKeyCode = PF_R; break;
+            case 'T': symbolicKeyCode = PF_T; break;
+            case 'Y': symbolicKeyCode = PF_Y; break;
+            case 'U': symbolicKeyCode = PF_U; break;
+            case 'I': symbolicKeyCode = PF_I; break;
+            case 'O': symbolicKeyCode = PF_O; break;
+            case 'P': symbolicKeyCode = PF_P; break;
+            case VK_OEM_4: symbolicKeyCode = PF_OPEN_SQUARE_BRACKET; break;
+            case VK_OEM_6: symbolicKeyCode = PF_CLOSE_SQUARE_BRACKET; break;
+            case VK_OEM_5: symbolicKeyCode = PF_BACKSLASH; break;
+            
+            case VK_CAPITAL: symbolicKeyCode = PF_CAPS_LOCK; break;
+            case 'A': symbolicKeyCode = PF_A; break;
+            case 'S': symbolicKeyCode = PF_S; break;
+            case 'D': symbolicKeyCode = PF_D; break;
+            case 'F': symbolicKeyCode = PF_F; break;
+            case 'G': symbolicKeyCode = PF_G; break;
+            case 'H': symbolicKeyCode = PF_H; break;
+            case 'J': symbolicKeyCode = PF_J; break;
+            case 'K': symbolicKeyCode = PF_K; break;
+            case 'L': symbolicKeyCode = PF_L; break;
+            case VK_OEM_1: symbolicKeyCode = PF_SEMICOLON; break;
+            case VK_OEM_7: symbolicKeyCode = PF_APOSTROPHE; break;
+            case VK_RETURN: symbolicKeyCode = PF_ENTER; break;
+            
+            case VK_LSHIFT: symbolicKeyCode = PF_LEFT_SHIFT; break;
+            case 'Z': symbolicKeyCode = PF_Z; break;
+            case 'X': symbolicKeyCode = PF_X; break;
+            case 'C': symbolicKeyCode = PF_C; break;
+            case 'V': symbolicKeyCode = PF_V; break;
+            case 'B': symbolicKeyCode = PF_B; break;
+            case 'N': symbolicKeyCode = PF_N; break;
+            case 'M': symbolicKeyCode = PF_M; break;
+            case VK_OEM_COMMA: symbolicKeyCode = PF_COMMA; break;
+            case VK_OEM_PERIOD: symbolicKeyCode = PF_PERIOD; break;
+            case VK_OEM_2: symbolicKeyCode = PF_FORWARD_SLASH; break;
+            case VK_RSHIFT: symbolicKeyCode = PF_RIGHT_SHIFT; break;
+            
+            case VK_LCONTROL: symbolicKeyCode = PF_LEFT_CTRL; break;
+            case VK_LWIN: symbolicKeyCode = PF_LEFT_WIN; break;
+            case VK_LMENU: symbolicKeyCode = PF_LEFT_ALT; break;
+            case VK_SPACE: symbolicKeyCode = PF_SPACEBAR; break;
+            case VK_RMENU: symbolicKeyCode = PF_RIGHT_ALT; break;
+            case VK_RWIN: symbolicKeyCode = PF_RIGHT_WIN; break;
+            //TODO(KARAN): VkCode for PF_MENU?? case VK_: symbolicKeyCode = PF_MENU; break;
+            case VK_RCONTROL: symbolicKeyCode = PF_RIGHT_CTRL; break;
+            
+            case VK_INSERT: symbolicKeyCode = PF_INSERT; break;
+            case VK_HOME: symbolicKeyCode = PF_HOME; break;
+            case VK_PRIOR: symbolicKeyCode = PF_PAGE_UP; break;
+            case VK_DELETE: symbolicKeyCode = PF_DELETE; break;
+            case VK_END: symbolicKeyCode = PF_END; break;
+            case VK_NEXT: symbolicKeyCode = PF_PAGE_DOWN; break;
+            
+            case VK_UP: symbolicKeyCode = PF_UP; break;
+            case VK_DOWN: symbolicKeyCode = PF_DOWN; break;
+            case VK_LEFT: symbolicKeyCode = PF_LEFT; break;
+            case VK_RIGHT: symbolicKeyCode = PF_RIGHT; break;
+            
+            case VK_NUMLOCK: symbolicKeyCode = PF_NUM_LOCK; break;
+            case VK_DIVIDE: symbolicKeyCode = PF_NUMPAD_DIVIDE; break;
+            case VK_MULTIPLY: symbolicKeyCode = PF_NUMPAD_MULTIPLY; break;
+            case VK_SUBTRACT: symbolicKeyCode = PF_NUMPAD_MINUS; break;
+            case VK_NUMPAD7: symbolicKeyCode = PF_NUMPAD_7; break;
+            case VK_NUMPAD8: symbolicKeyCode = PF_NUMPAD_8; break;
+            case VK_NUMPAD9: symbolicKeyCode = PF_NUMPAD_9; break;
+            case VK_ADD: symbolicKeyCode = PF_NUMPAD_PLUS; break;
+            case VK_NUMPAD4: symbolicKeyCode = PF_NUMPAD_4; break;
+            case VK_NUMPAD5: symbolicKeyCode = PF_NUMPAD_5; break;
+            case VK_NUMPAD6: symbolicKeyCode = PF_NUMPAD_6; break;
+            case VK_NUMPAD1: symbolicKeyCode = PF_NUMPAD_1; break;
+            case VK_NUMPAD2: symbolicKeyCode = PF_NUMPAD_2; break;
+            case VK_NUMPAD3: symbolicKeyCode = PF_NUMPAD_3; break;
+            case VK_NUMPAD0: symbolicKeyCode = PF_NUMPAD_0; break;
+            case VK_DECIMAL: symbolicKeyCode = PF_NUMPAD_PERIOD; break;
+            //TODO(KARAN): Handle separately case VK_: symbolicKeyCode = PF_NUMPAD_ENTER; break;
+            
+            default: symbolicKeyCode = PF_NULL; break;
+        }
+        
+        globalScanCodesToSymbolCodeMap[scanCode] = symbolicKeyCode;
+        
+        char str[512] = {};
+        GetKeyNameTextA((LONG)(scanCode << 16), str, 512);
+        if(globalScanCodesToPositionCodeMap[scanCode] != PF_NULL)
+        {
+            DEBUG_LOG(stdout, "%03x | %02x | %s | %s | %s\n", scanCode, vkCode, pfKeyCodeStr[globalScanCodesToPositionCodeMap[scanCode]], pfKeyCodeStr[globalScanCodesToSymbolCodeMap[scanCode]], str);
+        }
+    }
+    
+    DEBUG_LOG(stdout, "\n---------------------------------\n\n");
+    
+    DEBUG_LOG(stdout, "SCAN CODE | VK CODE | POSITION CODE | SYMBOL CODE | TEXT NAME\n");
+    for(int i = 0; i < ARRAY_COUNT(globalScanCodesToPositionCodeMap); i++)
+    {
+        uint32 scanCode = i;
+        if(globalScanCodesToSymbolCodeMap[i] == PF_NULL)
+        {
+            PfKeyCode symbolicKeyCode = PF_NULL;
+            uint32 vkCode = MapVirtualKeyA(scanCode, MAPVK_VSC_TO_VK_EX);
+            
+            if(vkCode == 0 && ((scanCode & 0x100) != 0))
+            {
+                vkCode = MapVirtualKeyA(scanCode & 0x0FF, MAPVK_VSC_TO_VK_EX);
+            }
+            
+            switch(vkCode)
+            {
+                case 0: symbolicKeyCode = PF_NULL; break;
+                case VK_ESCAPE: symbolicKeyCode = PF_ESC; break;
+                case VK_F1: symbolicKeyCode = PF_F1; break;
+                case VK_F2: symbolicKeyCode = PF_F2; break;
+                case VK_F3: symbolicKeyCode = PF_F3; break;
+                case VK_F4: symbolicKeyCode = PF_F4; break;
+                case VK_F5: symbolicKeyCode = PF_F5; break;
+                case VK_F6: symbolicKeyCode = PF_F6; break;
+                case VK_F7: symbolicKeyCode = PF_F7; break;
+                case VK_F8: symbolicKeyCode = PF_F8; break;
+                case VK_F9: symbolicKeyCode = PF_F9; break;
+                case VK_F10: symbolicKeyCode = PF_F10; break;
+                case VK_F11: symbolicKeyCode = PF_F11; break;
+                case VK_F12: symbolicKeyCode = PF_F12; break;
+                case VK_PRINT: symbolicKeyCode = PF_PRINT_SCREEN; break;
+                case VK_SCROLL: symbolicKeyCode = PF_SCROLL_LOCK; break;
+                case VK_PAUSE: symbolicKeyCode = PF_PAUSE; break;
+                
+                case VK_OEM_3: symbolicKeyCode = PF_TILDE; break;
+                case 49: symbolicKeyCode = PF_1; break;
+                case 50: symbolicKeyCode = PF_2; break;
+                case 51: symbolicKeyCode = PF_3; break;
+                case 52: symbolicKeyCode = PF_4; break;
+                case 53: symbolicKeyCode = PF_5; break;
+                case 54: symbolicKeyCode = PF_6; break;
+                case 55: symbolicKeyCode = PF_7; break;
+                case 56: symbolicKeyCode = PF_8; break;
+                case 57: symbolicKeyCode = PF_9; break;
+                case 48: symbolicKeyCode = PF_0; break;
+                case VK_OEM_MINUS: symbolicKeyCode = PF_MINUS; break;
+                case VK_OEM_PLUS: symbolicKeyCode = PF_EQUALS; break;
+                case VK_BACK: symbolicKeyCode = PF_BACKSPACE; break;
+                
+                case VK_TAB: symbolicKeyCode = PF_TAB; break;
+                case 'Q': symbolicKeyCode = PF_Q; break;
+                case 'W': symbolicKeyCode = PF_W; break;
+                case 'E': symbolicKeyCode = PF_E; break;
+                case 'R': symbolicKeyCode = PF_R; break;
+                case 'T': symbolicKeyCode = PF_T; break;
+                case 'Y': symbolicKeyCode = PF_Y; break;
+                case 'U': symbolicKeyCode = PF_U; break;
+                case 'I': symbolicKeyCode = PF_I; break;
+                case 'O': symbolicKeyCode = PF_O; break;
+                case 'P': symbolicKeyCode = PF_P; break;
+                case VK_OEM_4: symbolicKeyCode = PF_OPEN_SQUARE_BRACKET; break;
+                case VK_OEM_6: symbolicKeyCode = PF_CLOSE_SQUARE_BRACKET; break;
+                case VK_OEM_5: symbolicKeyCode = PF_BACKSLASH; break;
+                
+                case VK_CAPITAL: symbolicKeyCode = PF_CAPS_LOCK; break;
+                case 'A': symbolicKeyCode = PF_A; break;
+                case 'S': symbolicKeyCode = PF_S; break;
+                case 'D': symbolicKeyCode = PF_D; break;
+                case 'F': symbolicKeyCode = PF_F; break;
+                case 'G': symbolicKeyCode = PF_G; break;
+                case 'H': symbolicKeyCode = PF_H; break;
+                case 'J': symbolicKeyCode = PF_J; break;
+                case 'K': symbolicKeyCode = PF_K; break;
+                case 'L': symbolicKeyCode = PF_L; break;
+                case VK_OEM_1: symbolicKeyCode = PF_SEMICOLON; break;
+                case VK_OEM_7: symbolicKeyCode = PF_APOSTROPHE; break;
+                case VK_RETURN: symbolicKeyCode = PF_ENTER; break;
+                
+                case VK_LSHIFT: symbolicKeyCode = PF_LEFT_SHIFT; break;
+                case 'Z': symbolicKeyCode = PF_Z; break;
+                case 'X': symbolicKeyCode = PF_X; break;
+                case 'C': symbolicKeyCode = PF_C; break;
+                case 'V': symbolicKeyCode = PF_V; break;
+                case 'B': symbolicKeyCode = PF_B; break;
+                case 'N': symbolicKeyCode = PF_N; break;
+                case 'M': symbolicKeyCode = PF_M; break;
+                case VK_OEM_COMMA: symbolicKeyCode = PF_COMMA; break;
+                case VK_OEM_PERIOD: symbolicKeyCode = PF_PERIOD; break;
+                case VK_OEM_2: symbolicKeyCode = PF_FORWARD_SLASH; break;
+                case VK_RSHIFT: symbolicKeyCode = PF_RIGHT_SHIFT; break;
+                
+                case VK_LCONTROL: symbolicKeyCode = PF_LEFT_CTRL; break;
+                case VK_LWIN: symbolicKeyCode = PF_LEFT_WIN; break;
+                case VK_LMENU: symbolicKeyCode = PF_LEFT_ALT; break;
+                case VK_SPACE: symbolicKeyCode = PF_SPACEBAR; break;
+                case VK_RMENU: symbolicKeyCode = PF_RIGHT_ALT; break;
+                case VK_RWIN: symbolicKeyCode = PF_RIGHT_WIN; break;
+                //TODO(KARAN): VkCode for PF_MENU?? case VK_: symbolicKeyCode = PF_MENU; break;
+                case VK_RCONTROL: symbolicKeyCode = PF_RIGHT_CTRL; break;
+                
+                case VK_INSERT: symbolicKeyCode = PF_INSERT; break;
+                case VK_HOME: symbolicKeyCode = PF_HOME; break;
+                case VK_PRIOR: symbolicKeyCode = PF_PAGE_UP; break;
+                case VK_DELETE: symbolicKeyCode = PF_DELETE; break;
+                case VK_END: symbolicKeyCode = PF_END; break;
+                case VK_NEXT: symbolicKeyCode = PF_PAGE_DOWN; break;
+                
+                case VK_UP: symbolicKeyCode = PF_UP; break;
+                case VK_DOWN: symbolicKeyCode = PF_DOWN; break;
+                case VK_LEFT: symbolicKeyCode = PF_LEFT; break;
+                case VK_RIGHT: symbolicKeyCode = PF_RIGHT; break;
+                
+                case VK_NUMLOCK: symbolicKeyCode = PF_NUM_LOCK; break;
+                case VK_DIVIDE: symbolicKeyCode = PF_NUMPAD_DIVIDE; break;
+                case VK_MULTIPLY: symbolicKeyCode = PF_NUMPAD_MULTIPLY; break;
+                case VK_SUBTRACT: symbolicKeyCode = PF_NUMPAD_MINUS; break;
+                case VK_NUMPAD7: symbolicKeyCode = PF_NUMPAD_7; break;
+                case VK_NUMPAD8: symbolicKeyCode = PF_NUMPAD_8; break;
+                case VK_NUMPAD9: symbolicKeyCode = PF_NUMPAD_9; break;
+                case VK_ADD: symbolicKeyCode = PF_NUMPAD_PLUS; break;
+                case VK_NUMPAD4: symbolicKeyCode = PF_NUMPAD_4; break;
+                case VK_NUMPAD5: symbolicKeyCode = PF_NUMPAD_5; break;
+                case VK_NUMPAD6: symbolicKeyCode = PF_NUMPAD_6; break;
+                case VK_NUMPAD1: symbolicKeyCode = PF_NUMPAD_1; break;
+                case VK_NUMPAD2: symbolicKeyCode = PF_NUMPAD_2; break;
+                case VK_NUMPAD3: symbolicKeyCode = PF_NUMPAD_3; break;
+                case VK_NUMPAD0: symbolicKeyCode = PF_NUMPAD_0; break;
+                case VK_DECIMAL: symbolicKeyCode = PF_NUMPAD_PERIOD; break;
+                //TODO(KARAN): Handle separately case VK_: symbolicKeyCode = PF_NUMPAD_ENTER; break;
+                
+                default: symbolicKeyCode = PF_NULL; break;
+            }
+            
+            globalScanCodesToSymbolCodeMap[scanCode] = symbolicKeyCode;
+            char str[512] = {};
+            GetKeyNameTextA((LONG)(scanCode << 16), str, 512);
+            if(globalScanCodesToPositionCodeMap[scanCode] != PF_NULL)
+            {
+                DEBUG_LOG(stdout, "%03x | %02x | %s | %s | %s\n", scanCode, vkCode, pfKeyCodeStr[globalScanCodesToPositionCodeMap[scanCode]], pfKeyCodeStr[globalScanCodesToSymbolCodeMap[scanCode]], str);
+            }
+        }
+    }
+#endif
 }
 
 
@@ -273,14 +1129,14 @@ void WinCreateOpenGLContext(PfWindow *window)
     int32 closestPixelFormatIndex;
     uint32 numFormats;
     BOOL choosingSuccess = wglChoosePixelFormatARB(window->deviceContext, desiredPixelFormatARB, NULL, 1, &closestPixelFormatIndex, &numFormats);
-    ASSERT(choosingSuccess == TRUE);
+    ASSERT(choosingSuccess == TRUE, "Couldn't choose desired pixel format");
     
     PIXELFORMATDESCRIPTOR desiredPixelFormat;
     int32 describeSuccess =  DescribePixelFormat(window->deviceContext, closestPixelFormatIndex, sizeof(desiredPixelFormat), &desiredPixelFormat);
-    ASSERT(describeSuccess);
+    ASSERT(describeSuccess, "Couldn't get the description of choosen pixel format");
     
     BOOL setPixelFormatSuccess = SetPixelFormat(window->deviceContext, closestPixelFormatIndex, &desiredPixelFormat);
-    ASSERT(setPixelFormatSuccess == TRUE);
+    ASSERT(setPixelFormatSuccess == TRUE, "Couldn't set window's DC pixel format");
     
     // TODO(KARAN): Shared context for async texture uploads
     HGLRC sharedContext = 0;
@@ -313,7 +1169,7 @@ void WinCreateOpenGLContext(PfWindow *window)
         DEBUG_ERROR("Couldn't create a modern OpenGL context. wgl create context arb extension not available"); 
     }
     
-    ASSERT(window->glContext);
+    ASSERT(window->glContext, "Couldn't create OpenGL context");
 }
 
 
@@ -332,7 +1188,7 @@ void PfResizeWindow(PfWindow *window, int32 width, int32 height)
     
     int bitmapMemorySize = window->offscreenBuffer.bytesPerPixel * width  * height;
     
-    ASSERT(bitmapMemorySize >= 0);
+    ASSERT(bitmapMemorySize >= 0, "Window buffer size cannot be negative");
     
     (window->offscreenBuffer.info).bmiHeader.biSize = sizeof((window->offscreenBuffer.info).bmiHeader);
     (window->offscreenBuffer.info).bmiHeader.biWidth = width;
@@ -348,10 +1204,10 @@ void PfResizeWindow(PfWindow *window, int32 width, int32 height)
         
         if(window->glContext)
         {
-            wglMakeCurrent(window->deviceContext, window->glContext);
+            PfglMakeCurrent(window);
             GL_CALL(glViewport(0, 0, width, height));
         }
-        ASSERT(window->offscreenBuffer.data);
+        ASSERT(window->offscreenBuffer.data, "Window buffer allocation failed");
     }
     
 }
@@ -372,8 +1228,6 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     
     BOOL windowRectResult = AdjustWindowRect(&windowRect, windowStyle, 0);
     
-    ASSERT(windowRectResult != 0);
-    
     windowRect.right = windowRect.right - windowRect.left;
     windowRect.bottom = windowRect.bottom - windowRect.top;
     
@@ -385,14 +1239,13 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     
     if(window->windowHandle == 0)
     {
-        DEBUG_LOG(stderr,"ERROR: Could not create window. LINE: %d, FUNCTION:%s, FILE:%s\n", __LINE__, __func__, __FILE__);
+        DEBUG_ERROR("Could not create window");
     }
-    ASSERT(window->windowHandle);
     PfResizeWindow(window, width, height);
     
     BOOL propertySetResult = SetPropA(window->windowHandle, "PfWindow", window);
     HWND prevFocusWindowHandle = SetFocus(window->windowHandle);
-    ASSERT(prevFocusWindowHandle != 0);
+    ASSERT(prevFocusWindowHandle != 0, "");
     
     // NOTE(KARAN): If the window already had keyboard focus, WM_SETFOCUS message isn't sent to the WINDOWPROC. Hence this hack.
     if(prevFocusWindowHandle == window->windowHandle)
@@ -400,7 +1253,7 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
         window->hasKeyboardFocus = true;
     }
     
-    ASSERT(propertySetResult != 0);
+    ASSERT(propertySetResult != 0, "Couldn't associate PfWindow* with HWND window handle");
     
 #if 1
     
@@ -408,9 +1261,9 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     
     // HACK(KARAN): Creation of texture and vertices for rendering offscreenbuffer via opengl
     // Adding this so that code can be compiled.
-    wglMakeCurrent(window->deviceContext, window->glContext);
+    PfglMakeCurrent(window);
     
-    DEBUG_LOG(stdout, "OpenGL version: %s\n\n", glGetString(GL_VERSION));
+    DEBUG_LOG("OpenGL version: %s\n\n", glGetString(GL_VERSION));
     GL_CALL(glViewport(0, 0, width, height));
     
     GL_CALL(glGenTextures(1, &window->offscreenBufferTextureId));
@@ -470,6 +1323,7 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     glEnableVertexAttribArray(1);
     
     char *vertexShaderSource = "#version 330 core\nlayout (location = 0) in vec3 aPos;layout (location = 1) in vec2 aTexCoord;out vec3 ourColor; out vec2 TexCoord; void main() { gl_Position = vec4(aPos, 1.0); ourColor = vec3(1.0f, 1.0f, 1.0f); TexCoord = vec2(aTexCoord.x, aTexCoord.y);}";
+    
     char *fragmentShaderSource = "#version 330 core\nout vec4 FragColor; in vec3 ourColor; in vec2 TexCoord; uniform sampler2D texture1; void main(){FragColor = texture(texture1, TexCoord);}";
     
     uint32 vertexShader;
@@ -578,7 +1432,7 @@ void PfBlitToScreen(PfWindow *window)
                                         0,0,window->offscreenBuffer.width, window->offscreenBuffer.height,
                                         window->offscreenBuffer.data, &(window->offscreenBuffer.info),DIB_RGB_COLORS,SRCCOPY);
         
-        ASSERT(scanLines);
+        ASSERT(scanLines == window->offscreenBuffer.height, "Did not blit the entire height of the buffer");
 #if DEBUG_ENABLE_HARDWARE_BLIT
     }
 #endif
@@ -614,19 +1468,21 @@ void PfToggleFullscreen(PfWindow *window)
 }
 
 
-int32 PfGetKeyState(int32 vkCode)
+int32 PfGetKeyState(PfKeyCode keyCode, bool isVkCode = false)
 {
     int32 result;
-    result = globalKeyboard[vkCode];
+    int32 arrayIndex = isVkCode ? 1 : 0;
+    result = globalKeyboard[arrayIndex][keyCode];
     return result;
 }
 
-int32 PfGetKeyState(PfWindow *window, int32 vkCode)
+int32 PfGetKeyState(PfWindow *window, PfKeyCode keyCode, bool isVkCode = false)
 {
     int32 result = 0;
+    int32 arrayIndex = isVkCode ? 1 : 0;
     if(window->hasKeyboardFocus)//windowHandle == globalKeyboardFocusWindowHandle)
     {
-        result = globalKeyboard[vkCode];
+        result = globalKeyboard[arrayIndex][keyCode];
     }
     return result;
 }
@@ -714,7 +1570,7 @@ inline void PfglMakeCurrent(PfWindow *window)
         makeCurrentSuccess = wglMakeCurrent(window->deviceContext, window->glContext);
     }
     
-    ASSERT(makeCurrentSuccess == TRUE);
+    ASSERT(makeCurrentSuccess == TRUE, "Failed to make window's OpenGL context current");
 }
 
 void PfglRenderWindow(PfWindow *window)
@@ -797,5 +1653,35 @@ void PfSleep(int32 milliseconds)
     if(milliseconds > 0)
     {
         Sleep(milliseconds);
+    }
+}
+
+void PfUpdate()
+{
+    globalMouseButtons[0] = GetKeyState(VK_LBUTTON) >> 15;
+    globalMouseButtons[1] = GetKeyState(VK_MBUTTON) >> 15;
+    globalMouseButtons[2] = GetKeyState(VK_RBUTTON) >> 15;
+    globalMouseButtons[3] = GetKeyState(VK_XBUTTON1) >> 15;
+    globalMouseButtons[4] = GetKeyState(VK_XBUTTON2) >> 15;
+    
+    MSG message = {};
+    
+    // NOTE(KARAN): If hWnd is NULL, PeekMessage retrieves messages for any window that belongs to the current thread, and any messages on the current thread's message queue whose hwnd value is NULL
+    HWND windowHandle = 0;
+    while(PeekMessage(&message, windowHandle, 0, 0, PM_REMOVE) > 0)
+    {
+        switch(message.message)
+        {
+            case WM_QUIT:
+            {
+                PfWindow *window = (PfWindow*)GetPropA(message.hwnd, "PfWindow");
+                if(window) window->shouldClose = true;
+            }break;
+            default:
+            {
+                TranslateMessage(&message);
+                DispatchMessage(&message);
+            }break;
+        }
     }
 }
