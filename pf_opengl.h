@@ -21,7 +21,7 @@ inline void glCheckErrors(char *functionName, char *file, int line)
     error = glGetError();
     while(error != GL_NO_ERROR)
     {
-        DEBUG_ERROR("[OPENGL_ERROR: %d]", error); 
+        DEBUG_ERROR("[OPENGL_ERROR: %d Function:%s File:%s Line:%d]", error, functionName, file, line); 
         
         if((error = glGetError()) == GL_NO_ERROR)
         {
