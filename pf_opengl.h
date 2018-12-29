@@ -1,9 +1,11 @@
 #pragma once
 
+#if !PF_GLEW_ENABLED
 #if PLATFORM_WINDOWS
 #include <GL/gl.h>
 #elif PLATFORM_LINUX
 #include <GL/glx.h>
+#endif
 #endif
 
 #include "utility.h"
@@ -30,9 +32,10 @@ inline void glCheckErrors(char *functionName, char *file, int line)
     }
 }
 
-
+#if !PF_GLEW_ENABLED
 #if PLATFORM_WINDOWS
 #include "windows_opengl.h"
 #elif PLATFORM_LINUX
 #include "linux_opengl.h"
+#endif
 #endif

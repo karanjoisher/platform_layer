@@ -1,11 +1,51 @@
 #include <stdio.h>
 #include <intrin.h>  
+
+#if !PF_GLEW_ENABLED
 #include <GL/gl.h>
+#endif
 
 #include "utility.h"
 #include "project_types.h"
 #include "windows_platform_interface.h"
+#define GLEW_STATIC
+
+#if PF_GLEW_ENABLED
+#include <GL/glew.h>
+#endif
+
 #include "pf_opengl.h"
+
+
+/********* WGL specific stuff *******/
+#define WGL_DRAW_TO_WINDOW_ARB            0x2001
+#define WGL_SUPPORT_OPENGL_ARB            0x2010
+#define WGL_DOUBLE_BUFFER_ARB             0x2011
+#define WGL_PIXEL_TYPE_ARB                0x2013
+#define WGL_COLOR_BITS_ARB                0x2014
+#define WGL_TYPE_RGBA_ARB                 0x202B
+#define WGL_DEPTH_BITS_ARB                0x2022
+#define WGL_STENCIL_BITS_ARB              0x2023
+
+#define WGL_CONTEXT_DEBUG_BIT_ARB         0x00000001
+#define WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB 0x00000002
+#define WGL_CONTEXT_MAJOR_VERSION_ARB     0x2091
+#define WGL_CONTEXT_MINOR_VERSION_ARB     0x2092
+#define WGL_CONTEXT_LAYER_PLANE_ARB       0x2093
+#define WGL_CONTEXT_FLAGS_ARB             0x2094
+#define WGL_CONTEXT_PROFILE_MASK_ARB      0x9126
+#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB  0x00000001
+#define WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB 0x00000002
+#define ERROR_INVALID_VERSION_ARB         0x2095
+
+typedef  const char *WINAPI type_wglGetExtensionsStringARB(HDC hdc);
+typedef BOOL WINAPI type_wglChoosePixelFormatARB(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
+typedef HGLRC WINAPI type_wglCreateContextAttribsARB(HDC hDC, HGLRC hShareContext, const int *attribList);
+
+global_variable type_wglGetExtensionsStringARB* wglGetExtensionsStringARB;  
+global_variable type_wglChoosePixelFormatARB* wglChoosePixelFormatARB;
+global_variable type_wglCreateContextAttribsARB* wglCreateContextAttribsARB;
+
 
 global_variable WNDCLASS globalWindowClass;
 global_variable int32 globalKeyboard[2][PF_ONE_PAST_LAST];
@@ -275,37 +315,6 @@ global_variable char* globalWindowsVkCodeToStrMap[]=
     "VK_OEM_CLEAR"
 };
 
-/********* WGL specific stuff *******/
-
-#define WGL_DRAW_TO_WINDOW_ARB            0x2001
-#define WGL_SUPPORT_OPENGL_ARB            0x2010
-#define WGL_DOUBLE_BUFFER_ARB             0x2011
-#define WGL_PIXEL_TYPE_ARB                0x2013
-#define WGL_COLOR_BITS_ARB                0x2014
-#define WGL_TYPE_RGBA_ARB                 0x202B
-#define WGL_DEPTH_BITS_ARB                0x2022
-#define WGL_STENCIL_BITS_ARB              0x2023
-
-#define WGL_CONTEXT_DEBUG_BIT_ARB         0x00000001
-#define WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB 0x00000002
-#define WGL_CONTEXT_MAJOR_VERSION_ARB     0x2091
-#define WGL_CONTEXT_MINOR_VERSION_ARB     0x2092
-#define WGL_CONTEXT_LAYER_PLANE_ARB       0x2093
-#define WGL_CONTEXT_FLAGS_ARB             0x2094
-#define WGL_CONTEXT_PROFILE_MASK_ARB      0x9126
-#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB  0x00000001
-#define WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB 0x00000002
-#define ERROR_INVALID_VERSION_ARB         0x2095
-
-typedef  const char *WINAPI type_wglGetExtensionsStringARB(HDC hdc);
-typedef BOOL WINAPI type_wglChoosePixelFormatARB(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
-typedef HGLRC WINAPI type_wglCreateContextAttribsARB(HDC hDC, HGLRC hShareContext, const int *attribList);
-
-global_variable type_wglGetExtensionsStringARB* wglGetExtensionsStringARB;  
-global_variable type_wglChoosePixelFormatARB* wglChoosePixelFormatARB;
-global_variable type_wglCreateContextAttribsARB* wglCreateContextAttribsARB;
-
-
 LRESULT CALLBACK WinWindowCallback(HWND windowHandle, UINT message, WPARAM wParam, LPARAM lParam)
 {
     /* NOTE(KARAN): Windows sends us two types of messages: Queued and non queued.
@@ -529,7 +538,6 @@ void PfInitialize()
     }
     
     //// 4. Get WGL extensions and load opengl functions
-    
     PfWindow dummyWindow = {};
     WNDCLASS dummyWindowClass = {};
     dummyWindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
@@ -577,7 +585,9 @@ Once a window's pixel format is set, it cannot be changed.
     BOOL makeCurrentSuccess = wglMakeCurrent(dummyWindow.deviceContext, dummyWindow.glContext);
     ASSERT(makeCurrentSuccess == TRUE, "Couldn't make dummy OpenGL context current");
     
+#if !PF_GLEW_ENABLED
     GrabOpenGLFuncPointers();
+#endif
     
     wglGetExtensionsStringARB = (type_wglGetExtensionsStringARB*)wglGetProcAddress("wglGetExtensionsStringARB");
     
@@ -1111,7 +1121,7 @@ Once a window's pixel format is set, it cannot be changed.
 #endif
 }
 
-
+#if 1
 void WinCreateOpenGLContext(PfWindow *window)
 {
     int32 desiredPixelFormatARB[] =
@@ -1171,7 +1181,7 @@ void WinCreateOpenGLContext(PfWindow *window)
     
     ASSERT(window->glContext, "Couldn't create OpenGL context");
 }
-
+#endif
 
 void PfResizeWindow(PfWindow *window, int32 width, int32 height)
 {
@@ -1255,36 +1265,31 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     
     ASSERT(propertySetResult != 0, "Couldn't associate PfWindow* with HWND window handle");
     
-#if 1
-    
     WinCreateOpenGLContext(window);
-    
     // HACK(KARAN): Creation of texture and vertices for rendering offscreenbuffer via opengl
     // Adding this so that code can be compiled.
     PfglMakeCurrent(window);
     
+#if PF_GLEW_ENABLED
+    GLenum err = glewInit();
+    if (GLEW_OK == err)
+    {
+        DEBUG_ERROR("GLEW INTIALIZATION FAILED");
+    }
+#endif
+    
     DEBUG_LOG("OpenGL version: %s\n\n", glGetString(GL_VERSION));
-    GL_CALL(glViewport(0, 0, width, height));
     
-    GL_CALL(glGenTextures(1, &window->offscreenBufferTextureId));
-    GL_CALL(glBindTexture(GL_TEXTURE_2D, window->offscreenBufferTextureId));
+    uint32 vbo, vao, ebo;
+    GL_CALL(glGenVertexArrays(1, &vao));
+    GL_CALL(glGenBuffers(1, &vbo));
+    GL_CALL(glGenBuffers(1, &ebo));
     
-    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
-    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
-    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER));
-    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER));
-    GLfloat debugColor[] = {1.0f, 0.0f, 1.0f, 1.0f};
-    GL_CALL(glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, debugColor));
-    
-    GL_CALL(glEnable(GL_BLEND));
-    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
-    
-    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    window->vao = vao;
+    GL_CALL(glBindVertexArray(vao));
     
     real32 xMax = 1.0f;
-    // TODO(KARAN): Flip XImage so that yMax can be set to 1.0f
     real32 yMax = -1.0f;
-    
     real32 vertices[] = 
     {
         // positions          // texture coords
@@ -1293,49 +1298,39 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
         -xMax, -yMax, 0.0f,   0.0f, 0.0f, // bottom left
         -xMax,  yMax, 0.0f,   0.0f, 1.0f  // top left 
     };
+    
     uint32 indices[] = 
     {
         0, 1, 3, // first triangle
         1, 2, 3  // second triangle
     };
     
-    uint32 vbo, vao, ebo;
-    GL_CALL(glGenVertexArrays(1, &vao));
-    GL_CALL(glGenBuffers(1, &vbo));
-    GL_CALL(glGenBuffers(1, &ebo));
+    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, vbo));
+    GL_CALL(glBufferData(GL_ARRAY_BUFFER, ARRAY_COUNT(vertices) * sizeof(real32), vertices, GL_STATIC_DRAW));
     
-    window->vao = vao;
-    
-    GL_CALL(glBindVertexArray(vao));
-    
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+    GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo));
+    GL_CALL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW));
     
     // position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    
+    GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0));
+    GL_CALL(glEnableVertexAttribArray(0));
     // texture coord attribute
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
+    GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float))));
+    GL_CALL(glEnableVertexAttribArray(1));
     
-    char *vertexShaderSource = "#version 330 core\nlayout (location = 0) in vec3 aPos;layout (location = 1) in vec2 aTexCoord;out vec3 ourColor; out vec2 TexCoord; void main() { gl_Position = vec4(aPos, 1.0); ourColor = vec3(1.0f, 1.0f, 1.0f); TexCoord = vec2(aTexCoord.x, aTexCoord.y);}";
-    
-    char *fragmentShaderSource = "#version 330 core\nout vec4 FragColor; in vec3 ourColor; in vec2 TexCoord; uniform sampler2D texture1; void main(){FragColor = texture(texture1, TexCoord);}";
+    GL_CALL(glBindVertexArray(0));
     
     uint32 vertexShader;
     GL_CALL(vertexShader = glCreateShader(GL_VERTEX_SHADER));
+    char *vertexShaderSource = "#version 430 core\nlayout (location = 0) in vec3 aPos;layout (location = 1) in vec2 aTexCoord;out vec3 ourColor; out vec2 TexCoord; void main() { gl_Position = vec4(aPos, 1.0); ourColor = vec3(1.0f, 1.0f, 1.0f); TexCoord = vec2(aTexCoord.x, aTexCoord.y);}\0";
     GL_CALL(glShaderSource(vertexShader, 1, &vertexShaderSource, 0));
     GL_CALL(glCompileShader(vertexShader));
     
     int32 success;
-    char infoLog[512];
     GL_CALL(glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success));
     if (!success)
     {
+        char infoLog[512] = {};
         GL_CALL(glGetShaderInfoLog(vertexShader, 512, NULL, infoLog));
         DEBUG_ERROR("%s", infoLog);
     }
@@ -1343,12 +1338,14 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     
     uint32 fragmentShader;
     GL_CALL(fragmentShader = glCreateShader(GL_FRAGMENT_SHADER));
-    GL_CALL(glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL));
+    char *fragmentShaderSource = "#version 430 core\nout vec4 FragColor; in vec3 ourColor; in vec2 TexCoord; uniform sampler2D texture1; void main(){FragColor = texture(texture1, TexCoord);}\0";
+    GL_CALL(glShaderSource(fragmentShader, 1, &fragmentShaderSource, 0));
     GL_CALL(glCompileShader(fragmentShader));
     
     GL_CALL(glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success));
     if (!success)
     {
+        char infoLog[512] = {};
         GL_CALL(glGetShaderInfoLog(vertexShader, 512, NULL, infoLog));
         DEBUG_ERROR("%s", infoLog);
     }
@@ -1364,8 +1361,21 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     GL_CALL(glDeleteShader(vertexShader));
     GL_CALL(glDeleteShader(fragmentShader));  
     
-    glBindVertexArray(0);
-#endif
+    GL_CALL(glViewport(0, 0, width, height));
+    
+    GL_CALL(glActiveTexture(GL_TEXTURE0));
+    GL_CALL(glGenTextures(1, &(window->offscreenBufferTextureId)));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, window->offscreenBufferTextureId));
+    
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER));
+    GLfloat debugColor[] = {1.0f, 0.0f, 1.0f, 1.0f};
+    GL_CALL(glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, debugColor));
+    
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    
 }
 
 PfRect PfGetClientRect(PfWindow *window)
@@ -1575,63 +1585,29 @@ inline void PfglMakeCurrent(PfWindow *window)
 
 void PfglRenderWindow(PfWindow *window)
 {
-    GL_CALL(glUseProgram(window->programId));
+    GL_CALL(GLboolean wasBlendEnabled = glIsEnabled(GL_BLEND));
     
-    //GL_CALL(glEnable(GL_TEXTURE_2D));
+    GL_CALL(glEnable(GL_BLEND));
+    GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+    
     GL_CALL(glActiveTexture(GL_TEXTURE0));
     GL_CALL(glBindTexture(GL_TEXTURE_2D, window->offscreenBufferTextureId));
     GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, window[0].offscreenBuffer.width, window[0].offscreenBuffer.height, 0,
                          GL_BGRA, GL_UNSIGNED_BYTE, window[0].offscreenBuffer.data));
     
-    // render container
     GL_CALL(glBindVertexArray(window->vao));
+    GL_CALL(glUseProgram(window->programId));
+    GL_CALL(GLint samplerUniformLocation = glGetUniformLocation(window->programId, "texture1"));
+    GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
     GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
     GL_CALL(glUseProgram(0));
     GL_CALL(glBindVertexArray(0));
-    
-    //GL_CALL(glDisable(GL_TEXTURE_2D));
-    
-#if 0
-    glEnable(GL_TEXTURE_2D);
-    
-    GL_CALL(glBindTexture(GL_TEXTURE_2D, window->offscreenBufferTextureId));
-    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, window[0].offscreenBuffer.width, window[0].offscreenBuffer.height, 0,
-                         GL_BGRA, GL_UNSIGNED_BYTE, window[0].offscreenBuffer.data));
-    
-    
-    real32 xMax = 1.0f;
-    // TODO(KARAN): Flip XImage so that yMax can be set to 1.0f
-    real32 yMax = -1.0f;
-    
-    GL_CALL(glBegin(GL_TRIANGLES));
-    
-    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-    
-    // Lower triangle
-    GL_CALL(glTexCoord2f(0.0f, 0.0f));
-    GL_CALL(glVertex2f(-xMax, -yMax));
-    
-    GL_CALL(glTexCoord2f(1.0f, 0.0f));
-    GL_CALL(glVertex2f(xMax, -yMax));
-    
-    GL_CALL(glTexCoord2f(1.0f, 1.0f));
-    GL_CALL(glVertex2f(xMax, yMax));
-    
-    // Upper triangle
-    GL_CALL(glTexCoord2f(0.0f, 0.0f));
-    GL_CALL(glVertex2f(-xMax, -yMax));
-    
-    GL_CALL(glTexCoord2f(1.0f, 1.0f));
-    GL_CALL(glVertex2f(xMax, yMax));
-    
-    GL_CALL(glTexCoord2f(0.0f, 1.0f));
-    GL_CALL(glVertex2f(-xMax, yMax));
-    
-    glEnd();
-    
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
-    glDisable(GL_TEXTURE_2D);
-#endif
+    
+    if(wasBlendEnabled == GL_FALSE)
+    {
+        glDisable(GL_BLEND);
+    }
 }
 
 

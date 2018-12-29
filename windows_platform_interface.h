@@ -2,7 +2,7 @@
 
 #include <windows.h>
 #include "project_types.h"
-#include <GL/gl.h>
+//#include <GL/gl.h>
 
 typedef int64 PfTimestamp;
 
@@ -46,7 +46,7 @@ struct PfWindow
     
     // HACK(KARAN): This is temporarily added to support 
     // offscreenbuffer rendering via opengl modern contexts.
-    GLuint offscreenBufferTextureId;
+    uint32 offscreenBufferTextureId;
     int32 vao;
     uint32 programId;
 };

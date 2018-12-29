@@ -153,7 +153,7 @@ if __name__ == "__main__":
             
             index = Index(nameOfFuncsToGen, functionName)
             if(index >= 0):
-                prototype = RemoveWord(line, "APIENTRY")
+                prototype = line
                 prototype = EatWhiteSpaceFromBothEnds(prototype)
                 glPrototypes[index] = prototype
                 #TODO : del namesOfFuncsToGen[index]
