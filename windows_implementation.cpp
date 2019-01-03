@@ -41,10 +41,12 @@
 typedef  const char *WINAPI type_wglGetExtensionsStringARB(HDC hdc);
 typedef BOOL WINAPI type_wglChoosePixelFormatARB(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
 typedef HGLRC WINAPI type_wglCreateContextAttribsARB(HDC hDC, HGLRC hShareContext, const int *attribList);
+typedef BOOL WINAPI type_wglSwapIntervalEXT(int interval);
 
 global_variable type_wglGetExtensionsStringARB* wglGetExtensionsStringARB;  
 global_variable type_wglChoosePixelFormatARB* wglChoosePixelFormatARB;
 global_variable type_wglCreateContextAttribsARB* wglCreateContextAttribsARB;
+global_variable type_wglSwapIntervalEXT* wglSwapIntervalEXT;
 
 
 global_variable WNDCLASS globalWindowClass;
@@ -588,16 +590,19 @@ Once a window's pixel format is set, it cannot be changed.
 #if !PF_GLEW_ENABLED
     GrabOpenGLFuncPointers();
 #endif
-    
+    //TODO(KARAN): Need to parse the extension strings before getting the pointer to the functions
     wglGetExtensionsStringARB = (type_wglGetExtensionsStringARB*)wglGetProcAddress("wglGetExtensionsStringARB");
     
     const char *wglExtensions = wglGetExtensionsStringARB(dummyWindow.deviceContext);
     
-    // TODO(KARAN): Part of WGL_ARB_pixel_format extension
+    // TODO(KARAN): WGL_ARB_pixel_format extension
     wglChoosePixelFormatARB = (type_wglChoosePixelFormatARB*)wglGetProcAddress("wglChoosePixelFormatARB");
     
-    // TODO(KARAN): Part of WGL_ARB_create_context extension
+    // TODO(KARAN): WGL_ARB_create_context extension
     wglCreateContextAttribsARB = (type_wglCreateContextAttribsARB*)wglGetProcAddress("wglCreateContextAttribsARB");
+    
+    // TODO(KARAN): WGL_EXT_swap_control extension
+    wglSwapIntervalEXT = (type_wglSwapIntervalEXT*)wglGetProcAddress("wglSwapIntervalEXT");
     
     BOOL deleteSuccess = wglDeleteContext(dummyWindow.glContext);
     
@@ -1475,6 +1480,9 @@ void PfToggleFullscreen(PfWindow *window)
                      SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
         window->fullscreen = false;
     }
+    PfglMakeCurrent(window);
+    PfRect clientRect = PfGetClientRect(window);
+    GL_CALL(glViewport(0, 0, clientRect.width, clientRect.height));
 }
 
 
@@ -1660,4 +1668,14 @@ void PfUpdate()
             }break;
         }
     }
+}
+
+bool PfRequestSwapInterval(int32 frames)
+{
+    bool result = false;
+    if(wglSwapIntervalEXT)
+    {
+        result = wglSwapIntervalEXT(frames);
+    }
+    return result;
 }

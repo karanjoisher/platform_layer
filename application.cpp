@@ -1,5 +1,6 @@
 #include "utility.h"
 #include "project_types.h"
+#include "math.h"
 
 #if PLATFORM_WINDOWS
 #include "windows_platform_interface.h"
@@ -15,49 +16,6 @@
 #if PLATFORM_WINDOWS
 #define sprintf sprintf_s
 #endif
-
-uint32 DebugController(PfWindow *window, PfRect *rect)
-{
-    uint32 color = 0xFF000000;
-    
-    
-    if(PfGetMouseButtonState(window, 0) != 0)
-    {
-        color = color | 0xFFFF0000;
-    }
-    
-    if(PfGetMouseButtonState(window, 1) != 0)
-    {
-        color = color | 0xFF00FF00;
-    }
-    
-    if(PfGetMouseButtonState(window, 2) != 0)
-    {
-        color = color | 0xFF0000FF;
-    }
-    
-    if(PfGetKeyState(window, PF_LEFT_ALT))
-    {
-        rect->y  -= 2;
-    }
-    
-    if(PfGetKeyState(window, PF_A))
-    {
-        rect->x  -= 2;
-    }
-    
-    if(PfGetKeyState(window, PF_S))
-    {
-        rect->y  += 2;
-    }
-    
-    if(PfGetKeyState(window, PF_D))
-    {
-        rect->x  += 2;
-    }
-    
-    return color;
-}
 
 void DrawRectangle(PfOffscreenBuffer *offscreenBuffer, PfRect rect,  uint32 color)
 {
@@ -132,105 +90,144 @@ void RenderGrid(PfOffscreenBuffer *offscreenBuffer)
     }
 }
 
+
+real32 RemapRange(real32 initialMin, real32 initialMax, real32 newMin, real32 newMax, real32 initialValue)
+{
+    real32 result;
+    result = (((initialValue - initialMin)/(initialMax - initialMin)) * (newMax - newMin)) + newMin;
+    return result;
+}
+
 #if 1
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+
+
 int main()
 {
     PfInitialize();
     PfGLConfig(4, 3, true);
     
-    int x = 0;
-    int y = 0;
-    int width = 256;
-    int height = 256;
+    PfWindow window[1] = {};
+    //PfCreateWindow(&window[1], (char*)"WINDOW 1", 256, 0, 256, 256);
+    PfCreateWindow(&window[0], (char*)"WINDOW 0", 0, 0, 800, 800);
     
-    PfWindow window[2] = {};
-    
-    PfCreateWindow(&window[0], (char*)"WINDOW 0", x, y, width, height);
-    
-    PfCreateWindow(&window[1], (char*)"WINDOW 1", 256, 0, width, height);
-    
-    
-    
+    real32 fps = 60.0f;
+    real32 targetMillisecondsPerFrame = (1000.0f/fps);
+    real32 dT = 1.0f/fps;
     
 #if 1
+    char *imagePath = "../data/spaceship.png";
+    PfglMakeCurrent(&window[0]);
+    int imageWidth, imageHeight, imageChannels;
+    stbi_set_flip_vertically_on_load(true);
+    unsigned char *imageData = stbi_load(imagePath, &imageWidth, &imageHeight, &imageChannels, 4);
+    uint32 textureId;
+    ASSERT(imageData, "Couldn't load image");
+    GL_CALL(glActiveTexture(GL_TEXTURE0));
+    GL_CALL(glGenTextures(1, &textureId));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, textureId));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, imageWidth, imageHeight, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, imageData));
     
-    // NOTE(KARAN): Modern opengl testing
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER));
+    GLfloat debugColor[] = {1.0f, 0.0f, 1.0f, 1.0f};
+    GL_CALL(glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, debugColor));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    stbi_image_free(imageData);
     
-    //
-    PfglMakeCurrent(&window[1]);
-    
-    real32 triangleVertices[] = 
+    PfRect clientRect = PfGetClientRect(&window[0]);
+    v2 max = {(real32)imageWidth/2.0f, (real32)imageHeight/2.0f};
+    v2 min = {-((real32)imageWidth/2.0f), -((real32)imageHeight/2.0f)};
+    real32 vertices[] = 
     {
-        -0.5f, -0.5f, 0.0f,
-        0.5f, -0.5f, 0.0f,
-        0.0f,  0.5f, 0.0f
-    };  
+        // positions          // texture coords
+        max.x, max.y, 0.0f,   1.0f, 1.0f, // top right
+        max.x, min.y, 0.0f,   1.0f, 0.0f, // bottom right
+        min.x, min.y, 0.0f,   0.0f, 0.0f, // bottom left
+        min.x, max.y, 0.0f,   0.0f, 1.0f  // top left 
+    };
     
-    uint32 vao;
+    uint32 indices[] = 
+    {
+        0, 1, 3, // first triangle
+        1, 2, 3  // second triangle
+    };
     
-    GL_CALL(glGenVertexArrays(1, &vao));  
-    GL_CALL(glBindVertexArray(vao));
-    
-    uint32 vbo;
+    uint32 vao, vbo, ebo;
+    GL_CALL(glGenVertexArrays(1, &vao));
     GL_CALL(glGenBuffers(1, &vbo));
+    GL_CALL(glGenBuffers(1, &ebo));
+    GL_CALL(glBindVertexArray(vao));
     GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, vbo));
-    GL_CALL(glBufferData(GL_ARRAY_BUFFER, ARRAY_COUNT(triangleVertices) * sizeof(triangleVertices[0]), triangleVertices, GL_STATIC_DRAW));
-    GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(real32), (void*)0));
+    GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW));
+    GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo));
+    GL_CALL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW));
+    GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0));
     GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float))));
+    GL_CALL(glEnableVertexAttribArray(1));
+    GL_CALL(glBindVertexArray(0));
+    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, 0));
+    GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
     
-    char *vertexShaderSource = "#version 330 core\nlayout (location = 0) in vec3 aPos;\nvoid main(){gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);}";
+    char *vertexShaderSource = 
+        "#version 430 core\nlayout (location = 0) in vec3 aPos;\nlayout (location = 1) in vec2 aTexCoord;\nout vec3 ourColor;\nout vec2 TexCoord;\nuniform mat4 orthoProjection;\nuniform mat4 translationMat;\nuniform mat4 rotationMatAboutZAxis;\nvoid main(){gl_Position =  orthoProjection * translationMat * rotationMatAboutZAxis * vec4(aPos, 1.0f);ourColor = vec3(1.0f, 1.0f, 1.0f);TexCoord = vec2(aTexCoord.x, aTexCoord.y);}";
     
-    char *fragmentShaderSource = "#version 330 core\nout vec4 FragColor;void main(){FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);}";
+    char *fragmentShaderSource = 
+        "#version 430 core\nout vec4 FragColor;in vec3 ourColor;in vec2 TexCoord;uniform sampler2D texture1;void main(){FragColor = texture(texture1, TexCoord);}";
     
-    uint32 vertexShader;
+    uint32 vertexShader, fragmentShader;
     GL_CALL(vertexShader = glCreateShader(GL_VERTEX_SHADER));
-    GL_CALL(glShaderSource(vertexShader, 1, &vertexShaderSource, 0));
-    GL_CALL(glCompileShader(vertexShader));
-    
-    int32 success;
-    char infoLog[512];
-    GL_CALL(glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success));
-    if (!success)
-    {
-        GL_CALL(glGetShaderInfoLog(vertexShader, 512, NULL, infoLog));
-        DEBUG_ERROR("%s", infoLog);
-    }
-    
-    
-    uint32 fragmentShader;
     GL_CALL(fragmentShader = glCreateShader(GL_FRAGMENT_SHADER));
-    GL_CALL(glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL));
+    
+    GL_CALL(glShaderSource(vertexShader, 1, &vertexShaderSource, 0));
+    GL_CALL(glShaderSource(fragmentShader, 1, &fragmentShaderSource, 0));
+    GL_CALL(glCompileShader(vertexShader));
     GL_CALL(glCompileShader(fragmentShader));
     
-    GL_CALL(glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success));
-    if (!success)
+    int32 vertexCompilationSuccess;
+    int32 fragmentCompilationSuccess;
+    GL_CALL(glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &vertexCompilationSuccess));
+    GL_CALL(glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &fragmentCompilationSuccess));
+    if (!vertexCompilationSuccess)
     {
+        char infoLog[512] = {};
         GL_CALL(glGetShaderInfoLog(vertexShader, 512, NULL, infoLog));
         DEBUG_ERROR("%s", infoLog);
     }
+    if (!fragmentCompilationSuccess)
+    {
+        char infoLog[512] = {};
+        GL_CALL(glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog));
+        DEBUG_ERROR("%s", infoLog);
+    }
     
-    
-    uint32 shaderProgram;
-    GL_CALL(shaderProgram = glCreateProgram());
-    
-    GL_CALL(glAttachShader(shaderProgram, vertexShader));
-    GL_CALL(glAttachShader(shaderProgram, fragmentShader));
-    GL_CALL(glLinkProgram(shaderProgram));
-    
+    uint32 programId;
+    GL_CALL(programId = glCreateProgram());
+    GL_CALL(glAttachShader(programId, vertexShader));
+    GL_CALL(glAttachShader(programId, fragmentShader));
+    GL_CALL(glLinkProgram(programId));
     GL_CALL(glDeleteShader(vertexShader));
     GL_CALL(glDeleteShader(fragmentShader));  
-    GL_CALL(glBindVertexArray(0));
+    
 #endif
     
-    PfRect rect1 = {0, 0, 30, 30};
-    PfRect rect2 = {0, 0, 10, 10};
+    PfRequestSwapInterval(1);
     
     PfTimestamp start = PfGetTimestamp();
     uint64 startCycles = PfRdtsc();
-    while(!window[0].shouldClose || !window[1].shouldClose)
+    
+    v3 spaceshipPos = {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f};
+    v3 spaceshipVel = {};
+    float rotation = 0.0f;
+    
+    while(!window[0].shouldClose)
     {
-        PfUpdate();
-        
         static bool toggled = false;
         if(PfGetKeyState(PF_LEFT_ALT, true) == 0 || PfGetKeyState(PF_ENTER, true) == 0)
         {
@@ -241,63 +238,106 @@ int main()
         {
             toggled = true;
             PfToggleFullscreen(&window[0]);
-            
         }
         
-        if(!toggled && PfGetKeyState(&window[1], PF_LEFT_ALT, true) && PfGetKeyState(&window[1], PF_ENTER, true) != 0)
+        if(PfGetKeyState(&window[0], PF_A)) rotation += 2.0f; 
+        if(PfGetKeyState(&window[0], PF_D)) rotation -= 2.0f;
+        
+        v3 forward = v3{Cosine(rotation * DEG_TO_RAD), Sine(rotation * DEG_TO_RAD), 0.0f};
+        v3 accelaration = {};
+        real32 breakingFactor = 1.5f;
+        real32 accelarationMultiplier = 750.0f;
+        if(PfGetKeyState(&window[0], PF_W)) accelaration = forward * accelarationMultiplier;
+        if(PfGetKeyState(&window[0], PF_S)) breakingFactor = 3.0f;
+        
+        accelaration = accelaration - (spaceshipVel * breakingFactor);
+        
+        v3 displacement = (spaceshipVel*dT) + (accelaration*0.5f*dT*dT);
+        
+        spaceshipPos = spaceshipPos + displacement;
+        
+        if(spaceshipPos.x < 0.0f)
         {
-            toggled = true;
-            PfToggleFullscreen(&window[1]);
+            spaceshipPos.x = (real32)clientRect.width + spaceshipPos.x;
         }
-        
-        uint32 color1 = DebugController(&window[0], &rect1);
-        uint32 color2 = DebugController(&window[1], &rect2);
-        
-        PfOffscreenBuffer offscreenBuffer1 = {};
-        PfOffscreenBuffer offscreenBuffer2 = {};
-        
-        PfGetOffscreenBuffer(&window[0], &offscreenBuffer1);
-        PfGetOffscreenBuffer(&window[1], &offscreenBuffer2);
-        
-        RenderGrid(&offscreenBuffer1);
-        DrawRectangle(&offscreenBuffer1, rect1, color1);
-        
-        DrawRectangle(&offscreenBuffer2, PfRect{0, 0, offscreenBuffer2.width, offscreenBuffer2.height}, 0);
-        PfRect rect2Border  = {rect2.x - 5, rect2.y - 5, rect2.width + 10, rect2.height + 10};
-        DrawRectangle(&offscreenBuffer2, rect2Border, color2);
-        DrawRectangle(&offscreenBuffer2, rect2, 0);
-        
-        if(!window[0].shouldClose) 
+        else if(spaceshipPos.x >= clientRect.width)
         {
-            PfBlitToScreen(&window[0]);
+            spaceshipPos.x = (real32)clientRect.width - spaceshipPos.x;
         }
         
-#if 1
         
-        if(!window[1].shouldClose)
+        if(spaceshipPos.y < 0.0f)
         {
-            
-            PfglMakeCurrent(&window[1]);
-            
-            glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-            
-            // Render Triangle
-            
-            GL_CALL(glUseProgram(shaderProgram));
-            GL_CALL(glBindVertexArray(vao));
-            GL_CALL(glDrawArrays(GL_TRIANGLES, 0, 3));
-            GL_CALL(glUseProgram(0));
-            GL_CALL(glBindVertexArray(0));
-            
-            PfglRenderWindow(&window[1]);
-            
-            PfglSwapBuffers(&window[1]);
-            
+            spaceshipPos.y = (real32)clientRect.height + spaceshipPos.y;
         }
-#endif
+        else if(spaceshipPos.y >= clientRect.height)
+        {
+            spaceshipPos.y = (real32)clientRect.height - spaceshipPos.y;
+        }
         
-        real32 targetMillisecondsPerFrame = (1000.0f/30.0f);
+        
+        spaceshipVel = spaceshipVel + (accelaration * dT);
+        
+        PfglMakeCurrent(&window[0]);
+        GL_CALL(glClearColor(1.0f, 0.0f, 1.0f, 1.0f));
+        GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
+        GL_CALL(GLboolean wasBlendEnabled = glIsEnabled(GL_BLEND));
+        GL_CALL(glEnable(GL_BLEND));
+        GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+        
+        GL_CALL(glActiveTexture(GL_TEXTURE0));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, textureId));
+        GL_CALL(glBindVertexArray(vao));
+        GL_CALL(glUseProgram(programId));
+        GL_CALL(GLint samplerUniformLocation = glGetUniformLocation(programId, "texture1"));
+        GL_CALL(GLint rotationMatAboutZAxisUniformLocation = glGetUniformLocation(programId, "rotationMatAboutZAxis"));
+        GL_CALL(GLint translationMatUniformLocation = glGetUniformLocation(programId, "translationMat"));
+        GL_CALL(GLint orthoProjectionUniformLocation = glGetUniformLocation(programId, "orthoProjection"));
+        
+        GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
+        
+        mat4 rotationMatAboutZAxis = {};
+        real32 cosine = Cosine(DEG_TO_RAD * rotation);
+        real32 sine = Sine(DEG_TO_RAD * rotation);
+        rotationMatAboutZAxis.data[0] = cosine;
+        rotationMatAboutZAxis.data[1] = -sine;
+        rotationMatAboutZAxis.data[4] = sine;
+        rotationMatAboutZAxis.data[5] = cosine;
+        rotationMatAboutZAxis.data[10] = 1.0f;
+        rotationMatAboutZAxis.data[15] = 1.0f;
+        
+        mat4 translationMat = {};
+        translationMat.data[0] = 1.0f; 
+        translationMat.data[5] = 1.0f; 
+        translationMat.data[10] = 1.0f; 
+        translationMat.data[3] = spaceshipPos.x;
+        translationMat.data[7] = spaceshipPos.y;
+        translationMat.data[11] = spaceshipPos.z;
+        translationMat.data[15] = 1.0f;
+        
+        mat4 orthoProjection = {};
+        orthoProjection.data[0] = 2.0f/(real32)clientRect.width;
+        orthoProjection.data[3] = -1.0f;
+        orthoProjection.data[5] = 2.0f/(real32)clientRect.height;
+        orthoProjection.data[7] = -1.0f;
+        orthoProjection.data[10] = 1.0f;
+        orthoProjection.data[15] = 1.0f;
+        
+        GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
+        GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
+        GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
+        GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
+        GL_CALL(glUseProgram(0));
+        GL_CALL(glBindVertexArray(0));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+        
+        if(wasBlendEnabled == GL_FALSE)
+        {
+            glDisable(GL_BLEND);
+        }
+        
+        PfglSwapBuffers(&window[0]);
+        
         real32 msRequiredToRenderThisFrame = PfGetSeconds(start, PfGetTimestamp()) * 1000.0f;
         
         real32 sleepTime = targetMillisecondsPerFrame - msRequiredToRenderThisFrame;
@@ -321,15 +361,13 @@ int main()
         int32 yMouse = -2;
         bool inside = false;
         
-        if(!window[0].shouldClose) inside = PfGetMouseCoordinates(&window[0], &xMouse, &yMouse);
-        sprintf(temp, "%.2fms %.2FPS %.3fMHz Inside: %d X: %d Y: %d", secondsPerFrame * 1000.0f, 1.0f/secondsPerFrame, cyclesPerFrame/(secondsPerFrame * 1000.0f * 1000.0f), inside, xMouse, yMouse);
+        inside = PfGetMouseCoordinates(&window[0], &xMouse, &yMouse);
+        sprintf(temp, "%.2fms %.2FPS %.3fMHz Spaceship:(%.2f, %.2f, %.2f)", secondsPerFrame * 1000.0f, 1.0f/secondsPerFrame, cyclesPerFrame/(secondsPerFrame * 1000.0f * 1000.0f), spaceshipPos.x, spaceshipPos.y, spaceshipPos.z);
         
-        if(!window[0].shouldClose) PfSetWindowTitle(&window[0], temp);
+        PfSetWindowTitle(&window[0], temp);
         
-        if(!window[1].shouldClose) inside = PfGetMouseCoordinates(&window[1], &xMouse, &yMouse);
-        sprintf(temp, "%.2fms %.2FPS %.3fMHz Inside: %d X: %d Y: %d", secondsPerFrame * 1000.0f, 1.0f/secondsPerFrame, cyclesPerFrame/(secondsPerFrame * 1000.0f * 1000.0f), inside, xMouse, yMouse);
-        
-        if(!window[1].shouldClose) PfSetWindowTitle(&window[1], temp);
+        PfUpdate();
+        clientRect = PfGetClientRect(&window[0]);
     }
     
 #if PLATFORM_LINUX

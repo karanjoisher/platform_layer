@@ -20,6 +20,9 @@ typedef size_t GLsizeiptr;
 
 
 INSERT_NEW_FUNCTION_TYPES_HERE
+typedef GLint APIENTRY type_glGetUniformLocation (GLuint program, const GLchar *name);
+typedef void APIENTRY type_glUniform1i (GLint location, GLint v0);
+typedef void APIENTRY type_glUniformMatrix4fv (GLint location, GLsizei count, GLboolean transpose, const GLfloat *value);
 typedef void  type_glGenVertexArrays (GLsizei n, GLuint *arrays);
 typedef void  type_glBindVertexArray (GLuint array);
 typedef void  type_glGenBuffers (GLsizei n, GLuint *buffers);
@@ -41,6 +44,9 @@ typedef void  type_glUseProgram (GLuint program);
 #define GL_FUNCTION(name) global_variable type_##name *name
 
 INSERT_NEW_FUNCTION_DECLARATIONS_HERE
+GL_FUNCTION(glGetUniformLocation);
+GL_FUNCTION(glUniform1i);
+GL_FUNCTION(glUniformMatrix4fv);
 GL_FUNCTION(glGenVertexArrays);
 GL_FUNCTION(glBindVertexArray);
 GL_FUNCTION(glGenBuffers);
@@ -68,6 +74,9 @@ GL_FUNCTION(glUseProgram);
 void GrabOpenGLFuncPointers()
 {
     INSERT_NEW_FUNCTION_GRABS_HERE;
+GL_GET_PROC_ADDRESS(glGetUniformLocation);
+GL_GET_PROC_ADDRESS(glUniform1i);
+GL_GET_PROC_ADDRESS(glUniformMatrix4fv);
 
 
 
