@@ -102,9 +102,23 @@ real32 RemapRange(real32 initialMin, real32 initialMax, real32 newMin, real32 ne
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+struct GameInput
+{
+    bool throttle;
+    bool left;
+    bool brake;
+    bool right;
+};
+
+struct GameState
+{
+    v3 spaceshipPos;
+    v3 spaceshipVel;
+    real32 spaceshipRotation;
+};
 
 
-int main()
+int main(int argc, char **argv)
 {
     PfInitialize();
     PfGLConfig(4, 3, true);
@@ -118,7 +132,7 @@ int main()
     real32 dT = 1.0f/fps;
     
 #if 1
-    char *imagePath = "../data/spaceship.png";
+    char *imagePath = "../data/asteroid_blend.png";
     PfglMakeCurrent(&window[0]);
     int imageWidth, imageHeight, imageChannels;
     stbi_set_flip_vertically_on_load(true);
@@ -222,12 +236,169 @@ int main()
     PfTimestamp start = PfGetTimestamp();
     uint64 startCycles = PfRdtsc();
     
-    v3 spaceshipPos = {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f};
-    v3 spaceshipVel = {};
-    float rotation = 0.0f;
     
+    bool recording = false;
+    bool playing = false;
+    GameInput input = {};
+    GameState gameState = {};
+    gameState.spaceshipPos = {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f};
+    gameState.spaceshipVel = {};
+    gameState.spaceshipRotation = 0.0f;
+    
+    HANDLE inputFileHandle = INVALID_HANDLE_VALUE;
+    int32 recordSlot = 0;
+    int32 playBackSlot = 0;
+    bool playingRestart = false;
+#if HOT_CODE_RELOADABLE
+    if(argc >= 2)
+    {
+        DEBUG_LOG("%s %s\n", argv[0], argv[1]);
+        if(AreStringsSame(argv[1], "hcr_reloaded"))
+        {
+            
+            DWORD bytesRead;
+            HANDLE hotCodeRelaunch = CreateFileA("hot_code_relaunch_persistent_data", GENERIC_READ, NULL, NULL, OPEN_EXISTING, NULL, NULL);
+            if(GetLastError() == ERROR_FILE_NOT_FOUND)
+            {
+            }
+            else
+            {
+                ASSERT(hotCodeRelaunch != INVALID_HANDLE_VALUE, "File handle to read the persistent data is invalid");
+                ASSERT(ReadFile(hotCodeRelaunch, (void *)&playBackSlot, sizeof(playBackSlot), &bytesRead, NULL), "Failed to read the persistent data.");
+                ASSERT(bytesRead == sizeof(playBackSlot), "The bytes read from the file is not the same as the size of the playBackSlot");
+                CloseHandle(hotCodeRelaunch);
+                playingRestart = true;
+            }
+        }
+    }
+#endif
+    int32 totalSlots = 10; 
     while(!window[0].shouldClose)
     {
+        
+#if PLATFORM_WINDOWS
+        if(!recording && PfGetKeyState(&window[0], PF_LEFT_CTRL) && (PfGetKeyState(&window[0], PF_LEFT_SHIFT) == false) && PfGetKeyState(&window[0], PF_R))
+        {
+            recording = true;
+            
+            char gameStateFileName[32] = {};
+            char inputFileName[32] = {};
+            sprintf(gameStateFileName, "game_state_%d.state", recordSlot);
+            sprintf(inputFileName, "input_%d.input_series", recordSlot);
+            recordSlot = (recordSlot + 1) % totalSlots;
+            
+            DWORD bytesWritten;
+            HANDLE gameStateFileHandle = CreateFileA(gameStateFileName, GENERIC_WRITE, NULL, NULL, CREATE_ALWAYS, NULL, NULL);
+            ASSERT(gameStateFileHandle != INVALID_HANDLE_VALUE, "File handle to record the game state is invalid");
+            ASSERT(WriteFile(gameStateFileHandle, (void *)&gameState, sizeof(gameState), &bytesWritten, NULL), "Failed to write the game state data to the recording file.");
+            ASSERT(bytesWritten == sizeof(gameState), "The bytes written to file is not the same as the size of the gamestate");
+            CloseHandle(gameStateFileHandle);
+            
+            inputFileHandle = CreateFileA(inputFileName, GENERIC_WRITE, NULL, NULL, CREATE_ALWAYS, NULL, NULL);
+            ASSERT(inputFileHandle != INVALID_HANDLE_VALUE, "File handle to record the input is invalid");
+        }
+        
+        if(recording && PfGetKeyState(&window[0], PF_LEFT_CTRL) &&  PfGetKeyState(&window[0], PF_LEFT_SHIFT) && PfGetKeyState(&window[0], PF_R))
+        {
+            recording = false;
+            CloseHandle(inputFileHandle);
+        }
+        
+        if(playingRestart || (!playing && PfGetKeyState(&window[0], PF_LEFT_CTRL) && (PfGetKeyState(&window[0], PF_LEFT_SHIFT) == false) && PfGetKeyState(&window[0], PF_P)))
+        {
+            playingRestart = false;
+            playing = true;
+            
+#if HOT_CODE_RELOADABLE
+            DWORD bytesWritten;
+            HANDLE hotCodeRelaunch  = CreateFileA("hot_code_relaunch_persistent_data", GENERIC_WRITE, NULL, NULL, CREATE_ALWAYS, NULL, NULL);
+            ASSERT(hotCodeRelaunch != INVALID_HANDLE_VALUE, "File handle to record the persistent data for hot code reload is invalid");
+            ASSERT(WriteFile(hotCodeRelaunch, (void *)&playBackSlot, sizeof(playBackSlot), &bytesWritten, NULL), "Failed to store persistent data for hot code reload.");
+            ASSERT(bytesWritten == sizeof(playBackSlot), "The bytes written to file is not the same as the size of the int");
+            CloseHandle(hotCodeRelaunch);
+#endif
+            
+            char gameStateFileName[32] = {};
+            char inputFileName[32] = {};
+            sprintf(gameStateFileName, "game_state_%d.state", playBackSlot);
+            sprintf(inputFileName, "input_%d.input_series", playBackSlot);
+            
+            DWORD bytesRead;
+            HANDLE gameStateFileHandle = CreateFileA(gameStateFileName, GENERIC_READ, NULL, NULL, OPEN_EXISTING, NULL, NULL);
+            ASSERT(gameStateFileHandle != INVALID_HANDLE_VALUE, "File handle to read the game state is invalid");
+            ASSERT(ReadFile(gameStateFileHandle, (void *)&gameState, sizeof(gameState), &bytesRead, NULL), "Failed to read the game state data from the recording file.");
+            ASSERT(bytesRead == sizeof(gameState), "The bytes read from the file is not the same as the size of the gamestate");
+            CloseHandle(gameStateFileHandle);
+            
+            inputFileHandle = CreateFileA(inputFileName, GENERIC_READ, NULL, NULL, OPEN_EXISTING, NULL, NULL);
+            ASSERT(inputFileHandle != INVALID_HANDLE_VALUE, "File handle to read the input is invalid");
+        }
+        
+        if(playing && PfGetKeyState(&window[0], PF_LEFT_CTRL) &&  PfGetKeyState(&window[0], PF_LEFT_SHIFT) && PfGetKeyState(&window[0], PF_P))
+        {
+            playing = false;
+            CloseHandle(inputFileHandle);
+            
+            
+#if HOT_CODE_RELOADABLE
+            DeleteFileA("hot_code_relaunch_persistent_data");
+#endif
+        }
+        
+        if(playing)
+        {
+            bool playBackSlotChanged = false;
+            
+            if(PfGetKeyState(&window[0], PF_0))      { playBackSlot = 0; playBackSlotChanged = true; }
+            else if(PfGetKeyState(&window[0], PF_1)) { playBackSlot = 1; playBackSlotChanged = true; }
+            else if(PfGetKeyState(&window[0], PF_2)) { playBackSlot = 2; playBackSlotChanged = true; }
+            else if(PfGetKeyState(&window[0], PF_3)) { playBackSlot = 3; playBackSlotChanged = true; }
+            else if(PfGetKeyState(&window[0], PF_4)) { playBackSlot = 4; playBackSlotChanged = true; }
+            else if(PfGetKeyState(&window[0], PF_5)) { playBackSlot = 5; playBackSlotChanged = true; }
+            else if(PfGetKeyState(&window[0], PF_6)) { playBackSlot = 6; playBackSlotChanged = true; }
+            else if(PfGetKeyState(&window[0], PF_7)) { playBackSlot = 7; playBackSlotChanged = true; }
+            else if(PfGetKeyState(&window[0], PF_8)) { playBackSlot = 8; playBackSlotChanged = true; }
+            else if(PfGetKeyState(&window[0], PF_9)) { playBackSlot = 9; playBackSlotChanged = true; }
+            
+            if(playBackSlotChanged)
+            {
+                CloseHandle(inputFileHandle);
+                playingRestart = true;
+            }
+            else
+            {
+                DWORD bytesRead;
+                BOOL readSuccess = ReadFile(inputFileHandle, (void *)&input, sizeof(input), &bytesRead, NULL);
+                ASSERT(readSuccess == TRUE, "Failed to read the input data from the recording file.");
+                
+                bool eof = (readSuccess == TRUE) && (bytesRead == 0);
+                if(eof)
+                {
+                    input = {};
+                    CloseHandle(inputFileHandle);
+                    playingRestart = true;
+                }
+            }
+        }
+        else
+        {
+            
+#if PLATFORM_WINDOWS | PLATFORM_LINUX
+            input.throttle = PfGetKeyState(&window[0], PF_W);
+            input.left = PfGetKeyState(&window[0], PF_A);
+            input.brake = PfGetKeyState(&window[0], PF_S);
+            input.right = PfGetKeyState(&window[0], PF_D);
+#endif
+        }
+        
+        if(recording)
+        {
+            DWORD bytesWritten;
+            ASSERT(WriteFile(inputFileHandle, (void *)&input, sizeof(input), &bytesWritten, NULL), "Failed to write the input data to the recording file.");
+            ASSERT(bytesWritten == sizeof(input), "The bytes written to file is not the same as the size of the input");
+        }
+#endif
+        
         static bool toggled = false;
         if(PfGetKeyState(PF_LEFT_ALT, true) == 0 || PfGetKeyState(PF_ENTER, true) == 0)
         {
@@ -240,43 +411,43 @@ int main()
             PfToggleFullscreen(&window[0]);
         }
         
-        if(PfGetKeyState(&window[0], PF_A)) rotation += 2.0f; 
-        if(PfGetKeyState(&window[0], PF_D)) rotation -= 2.0f;
+        if(input.left) gameState.spaceshipRotation += 2.0f; 
+        if(input.right) gameState.spaceshipRotation -= 2.0f;
         
-        v3 forward = v3{Cosine(rotation * DEG_TO_RAD), Sine(rotation * DEG_TO_RAD), 0.0f};
+        v3 forward = v3{Cosine(gameState.spaceshipRotation * DEG_TO_RAD), Sine(gameState.spaceshipRotation * DEG_TO_RAD), 0.0f};
         v3 accelaration = {};
         real32 breakingFactor = 1.5f;
         real32 accelarationMultiplier = 750.0f;
-        if(PfGetKeyState(&window[0], PF_W)) accelaration = forward * accelarationMultiplier;
-        if(PfGetKeyState(&window[0], PF_S)) breakingFactor = 3.0f;
+        if(input.throttle) accelaration = forward * accelarationMultiplier;
+        if(input.brake) breakingFactor = 3.0f;
         
-        accelaration = accelaration - (spaceshipVel * breakingFactor);
+        accelaration = accelaration - (gameState.spaceshipVel * breakingFactor);
         
-        v3 displacement = (spaceshipVel*dT) + (accelaration*0.5f*dT*dT);
+        v3 displacement = (gameState.spaceshipVel*dT) + (accelaration*0.5f*dT*dT);
         
-        spaceshipPos = spaceshipPos + displacement;
+        gameState.spaceshipPos = gameState.spaceshipPos + displacement;
         
-        if(spaceshipPos.x < 0.0f)
+        if(gameState.spaceshipPos.x < 0.0f)
         {
-            spaceshipPos.x = (real32)clientRect.width + spaceshipPos.x;
+            gameState.spaceshipPos.x = (real32)clientRect.width + gameState.spaceshipPos.x;
         }
-        else if(spaceshipPos.x >= clientRect.width)
+        else if(gameState.spaceshipPos.x >= clientRect.width)
         {
-            spaceshipPos.x = (real32)clientRect.width - spaceshipPos.x;
-        }
-        
-        
-        if(spaceshipPos.y < 0.0f)
-        {
-            spaceshipPos.y = (real32)clientRect.height + spaceshipPos.y;
-        }
-        else if(spaceshipPos.y >= clientRect.height)
-        {
-            spaceshipPos.y = (real32)clientRect.height - spaceshipPos.y;
+            gameState.spaceshipPos.x = (real32)clientRect.width - gameState.spaceshipPos.x;
         }
         
         
-        spaceshipVel = spaceshipVel + (accelaration * dT);
+        if(gameState.spaceshipPos.y < 0.0f)
+        {
+            gameState.spaceshipPos.y = (real32)clientRect.height + gameState.spaceshipPos.y;
+        }
+        else if(gameState.spaceshipPos.y >= clientRect.height)
+        {
+            gameState.spaceshipPos.y = (real32)clientRect.height - gameState.spaceshipPos.y;
+        }
+        
+        
+        gameState.spaceshipVel = gameState.spaceshipVel + (accelaration * dT);
         
         PfglMakeCurrent(&window[0]);
         GL_CALL(glClearColor(1.0f, 0.0f, 1.0f, 1.0f));
@@ -297,8 +468,8 @@ int main()
         GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
         
         mat4 rotationMatAboutZAxis = {};
-        real32 cosine = Cosine(DEG_TO_RAD * rotation);
-        real32 sine = Sine(DEG_TO_RAD * rotation);
+        real32 cosine = Cosine(DEG_TO_RAD * gameState.spaceshipRotation);
+        real32 sine = Sine(DEG_TO_RAD * gameState.spaceshipRotation);
         rotationMatAboutZAxis.data[0] = cosine;
         rotationMatAboutZAxis.data[1] = -sine;
         rotationMatAboutZAxis.data[4] = sine;
@@ -310,9 +481,9 @@ int main()
         translationMat.data[0] = 1.0f; 
         translationMat.data[5] = 1.0f; 
         translationMat.data[10] = 1.0f; 
-        translationMat.data[3] = spaceshipPos.x;
-        translationMat.data[7] = spaceshipPos.y;
-        translationMat.data[11] = spaceshipPos.z;
+        translationMat.data[3] = gameState.spaceshipPos.x;
+        translationMat.data[7] = gameState.spaceshipPos.y;
+        translationMat.data[11] = gameState.spaceshipPos.z;
         translationMat.data[15] = 1.0f;
         
         mat4 orthoProjection = {};
@@ -362,7 +533,7 @@ int main()
         bool inside = false;
         
         inside = PfGetMouseCoordinates(&window[0], &xMouse, &yMouse);
-        sprintf(temp, "%.2fms %.2FPS %.3fMHz Spaceship:(%.2f, %.2f, %.2f)", secondsPerFrame * 1000.0f, 1.0f/secondsPerFrame, cyclesPerFrame/(secondsPerFrame * 1000.0f * 1000.0f), spaceshipPos.x, spaceshipPos.y, spaceshipPos.z);
+        sprintf(temp, "%.2fms %.2FPS %.3fMHz Spaceship:(%.2f, %.2f, %.2f) RECORDING: %d PLAYING:%d", secondsPerFrame * 1000.0f, 1.0f/secondsPerFrame, cyclesPerFrame/(secondsPerFrame * 1000.0f * 1000.0f), gameState.spaceshipPos.x, gameState.spaceshipPos.y, gameState.spaceshipPos.z, recording, playing);
         
         PfSetWindowTitle(&window[0], temp);
         
@@ -373,6 +544,7 @@ int main()
 #if PLATFORM_LINUX
     XCloseDisplay(globalDisplay);
 #endif
+    DEBUG_LOG("Exiting application.\n");
     return 0;
 }
 

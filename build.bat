@@ -5,7 +5,7 @@ python opengl_function_generator.py PLATFORM_WINDOWS .
 IF NOT EXIST ./build mkdir ./build
 cd build
 
-set FLAGS=-DSLOW_BUILD=1 -DDEBUG_BUILD=1 -DPLATFORM_WINDOWS=1 -DPF_GLEW_ENABLED=0
+set FLAGS=-DSLOW_BUILD=1 -DDEBUG_BUILD=1 -DPLATFORM_WINDOWS=1 -DPF_GLEW_ENABLED=0 -DHOT_CODE_RELOADABLE=1
 
 set CommonCompilerFlags= -MTd -Gm- -nologo -GR- -EHa- -Oi  -W4 -wd4201 -wd4100 -wd4127 -wd4505 -wd4189 -fp:fast  /Z7 
 
