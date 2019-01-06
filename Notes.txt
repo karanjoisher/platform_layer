@@ -151,3 +151,12 @@ Similar process for windows implementation.
 
 It seems that option 1 makes it less error prone for the user to use the API. However second approach allows the user to tradeoff platform independence by making use of platform specific attributes of an API struct. In my opinion approach two is better mainly because of the debugging benefit. 
 
+---------------------------------
+
+Windows accepts 0 to max_uint32(4,294,967,295) bytes to read or write
+Linux accepts 0 to max_int32(2,147,483,647) or max_int64(9,223,372,036,854,775,807)  bytes to read or write
+PF will support max_uint32(4,294,967,295) bytes to read/write (about 4GB)
+
+The file handles on windows can go from -2,147,483,648 to 4,294,967,295
+The file handles on linux can go from  -2,147,483,648 to 2,147,483,648
+PF gives handles in range from -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807

@@ -240,6 +240,11 @@ enum PfKeyCode
     PF_ONE_PAST_LAST,
 };
 
+#define PF_READ ((uint32)(1 << 0))
+#define PF_WRITE ((uint32)(1 << 1))
+#define PF_CREATE ((uint32)(1 << 2))
+#define PF_OPEN ((uint32)(1 << 3))
+
 void PfInitialize();
 void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32 width, int32 height);
 void PfResizeWindow(PfWindow *window, int32 width, int32 height);
@@ -264,3 +269,10 @@ void PfglSwapBuffers(PfWindow *window);
 void PfSleep(int32 milliseconds);
 void PfUpdate();
 bool PfRequestSwapInterval(int32 frames);
+int64 PfWriteEntireFile(char *filename, void *data, uint32 size);
+int64 PfReadEntireFile(char *filename, void *data, uint32 size);
+int64 PfWriteFile(int64 fileHandle, void *data, uint32 size);
+int64 PfReadFile(int64 fileHandle, void *data, uint32 size);
+int64 PfCreateFile(char *filename, uint32 access, uint32 creationDisposition);
+bool PfCloseFileHandle(int64 fileHandle);
+bool PfDeleteFile(char *filename);

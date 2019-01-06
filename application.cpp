@@ -19,7 +19,6 @@
 
 void DrawRectangle(PfOffscreenBuffer *offscreenBuffer, PfRect rect,  uint32 color)
 {
-    
     int32 minX = rect.x;
     int32 minY = rect.y;
     int32 maxX = minX + rect.width;
@@ -132,7 +131,7 @@ int main(int argc, char **argv)
     real32 dT = 1.0f/fps;
     
 #if 1
-    char *imagePath = "../data/asteroid_blend.png";
+    char *imagePath = "../data/spaceship.png";
     PfglMakeCurrent(&window[0]);
     int imageWidth, imageHeight, imageChannels;
     stbi_set_flip_vertically_on_load(true);
@@ -228,14 +227,12 @@ int main(int argc, char **argv)
     GL_CALL(glLinkProgram(programId));
     GL_CALL(glDeleteShader(vertexShader));
     GL_CALL(glDeleteShader(fragmentShader));  
-    
 #endif
     
     PfRequestSwapInterval(1);
     
     PfTimestamp start = PfGetTimestamp();
     uint64 startCycles = PfRdtsc();
-    
     
     bool recording = false;
     bool playing = false;
@@ -245,28 +242,23 @@ int main(int argc, char **argv)
     gameState.spaceshipVel = {};
     gameState.spaceshipRotation = 0.0f;
     
-    HANDLE inputFileHandle = INVALID_HANDLE_VALUE;
+    int64 inputFileHandle = -1;
     int32 recordSlot = 0;
     int32 playBackSlot = 0;
     bool playingRestart = false;
 #if HOT_CODE_RELOADABLE
     if(argc >= 2)
     {
-        DEBUG_LOG("%s %s\n", argv[0], argv[1]);
         if(AreStringsSame(argv[1], "hcr_reloaded"))
         {
-            
-            DWORD bytesRead;
-            HANDLE hotCodeRelaunch = CreateFileA("hot_code_relaunch_persistent_data", GENERIC_READ, NULL, NULL, OPEN_EXISTING, NULL, NULL);
-            if(GetLastError() == ERROR_FILE_NOT_FOUND)
+            int64 fileHandle = PfCreateFile("hot_code_relaunch_persistent_data", PF_READ, PF_OPEN);
+            if(fileHandle == -1)
             {
             }
             else
             {
-                ASSERT(hotCodeRelaunch != INVALID_HANDLE_VALUE, "File handle to read the persistent data is invalid");
-                ASSERT(ReadFile(hotCodeRelaunch, (void *)&playBackSlot, sizeof(playBackSlot), &bytesRead, NULL), "Failed to read the persistent data.");
-                ASSERT(bytesRead == sizeof(playBackSlot), "The bytes read from the file is not the same as the size of the playBackSlot");
-                CloseHandle(hotCodeRelaunch);
+                PfCloseFileHandle(fileHandle);
+                PfReadEntireFile("hot_code_relaunch_persistent_data", (void *)&playBackSlot, sizeof(playBackSlot));
                 playingRestart = true;
             }
         }
@@ -275,8 +267,8 @@ int main(int argc, char **argv)
     int32 totalSlots = 10; 
     while(!window[0].shouldClose)
     {
+        clientRect = PfGetClientRect(&window[0]);
         
-#if PLATFORM_WINDOWS
         if(!recording && PfGetKeyState(&window[0], PF_LEFT_CTRL) && (PfGetKeyState(&window[0], PF_LEFT_SHIFT) == false) && PfGetKeyState(&window[0], PF_R))
         {
             recording = true;
@@ -287,21 +279,15 @@ int main(int argc, char **argv)
             sprintf(inputFileName, "input_%d.input_series", recordSlot);
             recordSlot = (recordSlot + 1) % totalSlots;
             
-            DWORD bytesWritten;
-            HANDLE gameStateFileHandle = CreateFileA(gameStateFileName, GENERIC_WRITE, NULL, NULL, CREATE_ALWAYS, NULL, NULL);
-            ASSERT(gameStateFileHandle != INVALID_HANDLE_VALUE, "File handle to record the game state is invalid");
-            ASSERT(WriteFile(gameStateFileHandle, (void *)&gameState, sizeof(gameState), &bytesWritten, NULL), "Failed to write the game state data to the recording file.");
-            ASSERT(bytesWritten == sizeof(gameState), "The bytes written to file is not the same as the size of the gamestate");
-            CloseHandle(gameStateFileHandle);
-            
-            inputFileHandle = CreateFileA(inputFileName, GENERIC_WRITE, NULL, NULL, CREATE_ALWAYS, NULL, NULL);
-            ASSERT(inputFileHandle != INVALID_HANDLE_VALUE, "File handle to record the input is invalid");
+            PfWriteEntireFile(gameStateFileName, (void *)&gameState, sizeof(gameState));
+            inputFileHandle = PfCreateFile(inputFileName, PF_WRITE, PF_CREATE);
+            ASSERT(inputFileHandle != -1, "File handle to record the input is invalid");
         }
         
         if(recording && PfGetKeyState(&window[0], PF_LEFT_CTRL) &&  PfGetKeyState(&window[0], PF_LEFT_SHIFT) && PfGetKeyState(&window[0], PF_R))
         {
             recording = false;
-            CloseHandle(inputFileHandle);
+            PfCloseFileHandle(inputFileHandle);
         }
         
         if(playingRestart || (!playing && PfGetKeyState(&window[0], PF_LEFT_CTRL) && (PfGetKeyState(&window[0], PF_LEFT_SHIFT) == false) && PfGetKeyState(&window[0], PF_P)))
@@ -310,38 +296,25 @@ int main(int argc, char **argv)
             playing = true;
             
 #if HOT_CODE_RELOADABLE
-            DWORD bytesWritten;
-            HANDLE hotCodeRelaunch  = CreateFileA("hot_code_relaunch_persistent_data", GENERIC_WRITE, NULL, NULL, CREATE_ALWAYS, NULL, NULL);
-            ASSERT(hotCodeRelaunch != INVALID_HANDLE_VALUE, "File handle to record the persistent data for hot code reload is invalid");
-            ASSERT(WriteFile(hotCodeRelaunch, (void *)&playBackSlot, sizeof(playBackSlot), &bytesWritten, NULL), "Failed to store persistent data for hot code reload.");
-            ASSERT(bytesWritten == sizeof(playBackSlot), "The bytes written to file is not the same as the size of the int");
-            CloseHandle(hotCodeRelaunch);
+            PfWriteEntireFile("hot_code_relaunch_persistent_data", (void *)&playBackSlot, sizeof(playBackSlot));
 #endif
-            
             char gameStateFileName[32] = {};
             char inputFileName[32] = {};
             sprintf(gameStateFileName, "game_state_%d.state", playBackSlot);
             sprintf(inputFileName, "input_%d.input_series", playBackSlot);
             
-            DWORD bytesRead;
-            HANDLE gameStateFileHandle = CreateFileA(gameStateFileName, GENERIC_READ, NULL, NULL, OPEN_EXISTING, NULL, NULL);
-            ASSERT(gameStateFileHandle != INVALID_HANDLE_VALUE, "File handle to read the game state is invalid");
-            ASSERT(ReadFile(gameStateFileHandle, (void *)&gameState, sizeof(gameState), &bytesRead, NULL), "Failed to read the game state data from the recording file.");
-            ASSERT(bytesRead == sizeof(gameState), "The bytes read from the file is not the same as the size of the gamestate");
-            CloseHandle(gameStateFileHandle);
-            
-            inputFileHandle = CreateFileA(inputFileName, GENERIC_READ, NULL, NULL, OPEN_EXISTING, NULL, NULL);
-            ASSERT(inputFileHandle != INVALID_HANDLE_VALUE, "File handle to read the input is invalid");
+            PfReadEntireFile(gameStateFileName, (void *)&gameState, sizeof(gameState));
+            inputFileHandle = PfCreateFile(inputFileName, PF_READ, PF_OPEN);
+            ASSERT(inputFileHandle != -1, "File handle to read the input is invalid");
         }
         
         if(playing && PfGetKeyState(&window[0], PF_LEFT_CTRL) &&  PfGetKeyState(&window[0], PF_LEFT_SHIFT) && PfGetKeyState(&window[0], PF_P))
         {
             playing = false;
-            CloseHandle(inputFileHandle);
-            
+            PfCloseFileHandle(inputFileHandle);
             
 #if HOT_CODE_RELOADABLE
-            DeleteFileA("hot_code_relaunch_persistent_data");
+            PfDeleteFile("hot_code_relaunch_persistent_data");
 #endif
         }
         
@@ -362,42 +335,33 @@ int main(int argc, char **argv)
             
             if(playBackSlotChanged)
             {
-                CloseHandle(inputFileHandle);
+                PfCloseFileHandle(inputFileHandle);
                 playingRestart = true;
             }
             else
             {
-                DWORD bytesRead;
-                BOOL readSuccess = ReadFile(inputFileHandle, (void *)&input, sizeof(input), &bytesRead, NULL);
-                ASSERT(readSuccess == TRUE, "Failed to read the input data from the recording file.");
-                
-                bool eof = (readSuccess == TRUE) && (bytesRead == 0);
-                if(eof)
+                int64 bytesRead = PfReadFile(inputFileHandle, (void *)&input, sizeof(input));
+                if(bytesRead == 0)
                 {
                     input = {};
-                    CloseHandle(inputFileHandle);
+                    PfCloseFileHandle(inputFileHandle);
                     playingRestart = true;
                 }
             }
         }
         else
         {
-            
-#if PLATFORM_WINDOWS | PLATFORM_LINUX
             input.throttle = PfGetKeyState(&window[0], PF_W);
             input.left = PfGetKeyState(&window[0], PF_A);
             input.brake = PfGetKeyState(&window[0], PF_S);
             input.right = PfGetKeyState(&window[0], PF_D);
-#endif
+            
         }
         
         if(recording)
         {
-            DWORD bytesWritten;
-            ASSERT(WriteFile(inputFileHandle, (void *)&input, sizeof(input), &bytesWritten, NULL), "Failed to write the input data to the recording file.");
-            ASSERT(bytesWritten == sizeof(input), "The bytes written to file is not the same as the size of the input");
+            PfWriteFile(inputFileHandle, (void *)&input, sizeof(input));
         }
-#endif
         
         static bool toggled = false;
         if(PfGetKeyState(PF_LEFT_ALT, true) == 0 || PfGetKeyState(PF_ENTER, true) == 0)
@@ -536,9 +500,7 @@ int main(int argc, char **argv)
         sprintf(temp, "%.2fms %.2FPS %.3fMHz Spaceship:(%.2f, %.2f, %.2f) RECORDING: %d PLAYING:%d", secondsPerFrame * 1000.0f, 1.0f/secondsPerFrame, cyclesPerFrame/(secondsPerFrame * 1000.0f * 1000.0f), gameState.spaceshipPos.x, gameState.spaceshipPos.y, gameState.spaceshipPos.z, recording, playing);
         
         PfSetWindowTitle(&window[0], temp);
-        
         PfUpdate();
-        clientRect = PfGetClientRect(&window[0]);
     }
     
 #if PLATFORM_LINUX

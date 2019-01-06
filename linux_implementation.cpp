@@ -1,6 +1,10 @@
 #include "linux_platform_interface.h"
 
 #include <stdio.h>
+#include <errno.h>
+#include <sys/stat.h> 
+#include <fcntl.h>
+#include <unistd.h>
 #include <malloc.h>
 #include <time.h>
 #include <string.h>
@@ -32,8 +36,10 @@ global_variable int32 globalGLMinorVersion = 3;
 global_variable bool globalCoreProfile       = false;
 
 typedef GLXContext (*GLXCreateContextAttribsFuncType)(Display*, GLXFBConfig, GLXContext, Bool, const int*);
+typedef int (*GLXSwapIntervalMESAFuncType)(unsigned int interval);
 global_variable GLXCreateContextAttribsFuncType glXCreateContextAttribsARB;
-
+// TODO(KARAN): Need to check whether extensions are supported before using GetProcAddress, There are 3 types of SwapIntervals, need to query which one is available.
+global_variable GLXSwapIntervalMESAFuncType glXSwapInterval;
 
 void DebugLinuxPrintKeyboardMapping(Display *display)
 {
@@ -57,7 +63,7 @@ void DebugLinuxPrintKeyboardMapping(Display *display)
                 char *str = XKeysymToString(a);
                 if(str)
                 {
-                    fprintf(stdout, "0x%04x: %s, ", a, str);
+                    fprintf(stdout, "%lu: %s, ", a, str);
                 }
             }
         }
@@ -179,6 +185,7 @@ void PfInitialize()
     {
         DEBUG_ERROR("No FBConfig satisfying our settings were found");
     }
+    // TODO(KARAN): Need to check whether extensions are supported before using GetProcAddress, There are 3 types of SwapIntervals, need to query which one is available.
     
     int32 choosenFBConfigIndex = GetMaxSamplesFBConfigIndexAndVisual(globalDisplay, possibleFBConfigs, possibleFBConfigsCount, &globalVisual);
     
@@ -187,8 +194,9 @@ void PfInitialize()
     XFree(possibleFBConfigs);
     
     const char *glxExtensionsString = glXQueryExtensionsString(globalDisplay, screenNum);
-    glXCreateContextAttribsARB = (GLXCreateContextAttribsFuncType)
-        glXGetProcAddressARB( (const GLubyte *) "glXCreateContextAttribsARB" );
+    glXCreateContextAttribsARB = (GLXCreateContextAttribsFuncType)glXGetProcAddressARB( (const GLubyte *) "glXCreateContextAttribsARB" );
+    
+    glXSwapInterval = (GLXSwapIntervalMESAFuncType)(glXGetProcAddress( (const GLubyte *) "glXSwapIntervalMESA" ));
     
     globalIsModernOpenGLContextSupported = IsExtensionSupported(glxExtensionsString, "GLX_ARB_create_context") && glXCreateContextAttribsARB;
     
@@ -1347,4 +1355,143 @@ void PfUpdate()
             }break;
         }
     }
+}
+
+
+bool PfRequestSwapInterval(int32 frames)
+{
+    if(glXSwapInterval) 
+    {
+        int32 returnVal = glXSwapInterval(frames);
+        return (returnVal == 0);
+    }
+    else
+    {
+        return false;
+    }
+}
+
+
+int64 PfWriteEntireFile(char *filename, void *data, uint32 size)
+{
+    ssize_t bytesWritten;
+    int fileHandle = open(filename, O_WRONLY | O_CREAT);
+    
+    if(fileHandle == -1)
+    {
+        DEBUG_ERROR("Could not open %s for writing.", filename);
+        return -1;
+    }
+    
+    bytesWritten = write(fileHandle, data, size);
+    if(bytesWritten != size)
+    {
+        DEBUG_ERROR("Requested bytes to write: %d | Actual bytes written: %ld.", size, bytesWritten);
+    }
+    
+    close(fileHandle);
+    return bytesWritten;
+}
+
+
+int64 PfReadEntireFile(char *filename, void *data, uint32 size)
+{
+    ssize_t bytesRead;
+    int64 fileHandle = open(filename, O_RDONLY);
+    
+    if(fileHandle == -1)
+    {
+        DEBUG_ERROR("Could not open %s for reading.", filename);
+        return -1;
+    }
+    
+    bytesRead = read(fileHandle, data, size);
+    if(bytesRead != size)
+    {
+        DEBUG_ERROR("Requested bytes to read: %d | Actual bytes read: %ld.", size, bytesRead);
+    }
+    
+    close(fileHandle);
+    return bytesRead;
+}
+
+
+int64 PfCreateFile(char *filename, uint32 access, uint32 creationDisposition)
+{
+    int32 oFlags = 0;
+    if(((access & PF_READ) != 0) && ((access & PF_WRITE) != 0))
+    {
+        oFlags |= O_RDWR;
+    }
+    else if((access & PF_READ) != 0)
+    {
+        oFlags |= O_RDONLY;
+    }
+    else if((access & PF_WRITE) != 0)
+    {
+        oFlags |= O_WRONLY;
+    }
+    
+    if((creationDisposition & PF_CREATE) != 0)
+    {
+        oFlags |= O_CREAT;
+    }
+    
+    int64 linuxFileHandle = open(filename, oFlags);
+    return linuxFileHandle;
+}
+
+bool PfCloseFileHandle(int64 fileHandle)
+{
+    bool result = false;
+    int32 successCode;
+    successCode = close(fileHandle);
+    result = (successCode == 0);
+    return result;
+}
+
+bool PfDeleteFile(char *filename)
+{
+    bool result = false;
+    int32 successCode;
+    successCode = remove(filename);
+    result = (successCode == 0);
+    return result;
+}
+
+
+int64 PfReadFile(int64 fileHandle, void *data, uint32 size)
+{
+    int bytesRead = read(fileHandle, data, size);
+    if(bytesRead == -1)
+    {
+        DEBUG_ERROR("Failed to read");
+        return -1;
+    }
+    
+    bool eof = (bytesRead == 0);
+    if(!eof && bytesRead != size)
+    {
+        DEBUG_ERROR("Requested bytes to read: %d | Actual bytes read: %d.", size, bytesRead);
+    }
+    
+    return bytesRead;
+}
+
+
+int64 PfWriteFile(int64 fileHandle, void *data, uint32 size)
+{
+    int bytesWritten = write(fileHandle, data, size);
+    if(bytesWritten == -1)
+    {
+        DEBUG_ERROR("Failed to write");
+        return -1;
+    }
+    
+    if(bytesWritten != size)
+    {
+        DEBUG_ERROR("Requested bytes to write: %d | Actual bytes write: %d.", size, bytesWritten);
+    }
+    
+    return bytesWritten;
 }

@@ -1679,3 +1679,137 @@ bool PfRequestSwapInterval(int32 frames)
     }
     return result;
 }
+
+
+int64 PfWriteEntireFile(char *filename, void *data, uint32 size)
+{
+    HANDLE fileHandle = CreateFileA(filename, GENERIC_WRITE, NULL, NULL, CREATE_ALWAYS, NULL, NULL);
+    if(fileHandle == INVALID_HANDLE_VALUE)
+    {
+        DEBUG_ERROR("Could not open %s for writing.", filename);
+        return -1;
+    }
+    
+    DWORD bytesWritten;
+    WriteFile(fileHandle, data, size, &bytesWritten, NULL);
+    if(bytesWritten != size)
+    {
+        DEBUG_ERROR("Requested bytes to write: %d | Actual bytes written: %d.", size, bytesWritten);
+    }
+    
+    CloseHandle(fileHandle);
+    return bytesWritten;
+}
+
+
+int64 PfReadEntireFile(char *filename, void *data, uint32 size)
+{
+    HANDLE fileHandle = CreateFileA(filename, GENERIC_READ, NULL, NULL, OPEN_EXISTING, NULL, NULL);
+    
+    if(fileHandle == INVALID_HANDLE_VALUE)
+    {
+        DEBUG_ERROR("Could not open %s for reading.", filename);
+        return -1;
+    }
+    
+    DWORD bytesRead;
+    ReadFile(fileHandle, data, size, &bytesRead, NULL);
+    if(bytesRead != size)
+    {
+        DEBUG_ERROR("Requested bytes to read: %d | Actual bytes read: %d.", size, bytesRead);
+    }
+    
+    CloseHandle(fileHandle);
+    return bytesRead;
+}
+
+int64 PfCreateFile(char *filename, uint32 access, uint32 creationDisposition)
+{
+    int64 fileHandle = -1;
+    DWORD desiredAccess = 0;
+    if((access & PF_READ) != 0)
+    {
+        desiredAccess |= GENERIC_READ;
+    }
+    
+    if((access & PF_WRITE) != 0)
+    {
+        desiredAccess |= GENERIC_WRITE;
+    }
+    
+    DWORD desiredCreationDisposition = 0;
+    if((creationDisposition & PF_CREATE) != 0)
+    {
+        desiredCreationDisposition |= CREATE_ALWAYS;
+    }
+    else if((creationDisposition & PF_OPEN) != 0)
+    {
+        desiredCreationDisposition |= OPEN_EXISTING;
+    }
+    
+    HANDLE win32FileHandle = CreateFileA(filename, desiredAccess, NULL, NULL, desiredCreationDisposition, NULL, NULL);
+    if(win32FileHandle != INVALID_HANDLE_VALUE) 
+    {
+        fileHandle = (int64)win32FileHandle;
+    }
+    
+    return fileHandle;
+}
+
+bool PfCloseFileHandle(int64 fileHandle)
+{
+    bool result = false;
+    result = CloseHandle((HANDLE)fileHandle) != 0;
+    return result;
+}
+
+bool PfDeleteFile(char *filename)
+{
+    bool result = false;
+    BOOL successCode = DeleteFileA(filename);
+    result = (successCode != 0);
+    return result;
+}
+
+int64 PfReadFile(int64 fileHandle, void *data, uint32 size)
+{
+    fileHandle = fileHandle == -1 ? (int64)INVALID_HANDLE_VALUE : fileHandle;
+    
+    DWORD bytesRead;
+    BOOL readSuccess = ReadFile((HANDLE)fileHandle, data, size, &bytesRead, NULL);
+    if(readSuccess == FALSE)
+    {
+        DEBUG_ERROR("Failed to read");
+        return -1;
+    }
+    
+    bool eof = (readSuccess == TRUE) && (bytesRead == 0);
+    if(!eof && (bytesRead != size))
+    {
+        DEBUG_ERROR("Requested bytes to read: %d | Actual bytes read: %d.", size, bytesRead);
+    }
+    
+    return bytesRead;
+}
+
+
+
+int64 PfWriteFile(int64 fileHandle, void *data, uint32 size)
+{
+    fileHandle = fileHandle == -1 ? (int64)INVALID_HANDLE_VALUE : fileHandle;
+    
+    DWORD bytesWritten;
+    BOOL writeSuccess = WriteFile((HANDLE)fileHandle, data, size, &bytesWritten, NULL);
+    if(writeSuccess == FALSE)
+    {
+        DEBUG_ERROR("Failed to write");
+        return -1;
+    }
+    
+    if(bytesWritten != size)
+    {
+        DEBUG_ERROR("Requested bytes to write: %d | Actual bytes written: %d.", size, bytesWritten);
+    }
+    
+    return bytesWritten;
+}
