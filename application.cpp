@@ -17,6 +17,10 @@
 #define sprintf sprintf_s
 #endif
 
+#if 1
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 void DrawRectangle(PfOffscreenBuffer *offscreenBuffer, PfRect rect,  uint32 color)
 {
     int32 minX = rect.x;
@@ -89,36 +93,38 @@ void RenderGrid(PfOffscreenBuffer *offscreenBuffer)
     }
 }
 
-
-real32 RemapRange(real32 initialMin, real32 initialMax, real32 newMin, real32 newMax, real32 initialValue)
-{
-    real32 result;
-    result = (((initialValue - initialMin)/(initialMax - initialMin)) * (newMax - newMin)) + newMin;
-    return result;
-}
-
-#if 1
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
-
 struct GameInput
 {
     bool throttle;
     bool left;
     bool brake;
     bool right;
+    bool fire;
+};
+
+struct Bullet
+{
+    v3 pos;
+    v3 vel;
+    real32 duration;
+    Bullet *next;
 };
 
 struct GameState
 {
+    v2 spaceshipDim;
     v3 spaceshipPos;
     v3 spaceshipVel;
     real32 spaceshipRotation;
+    
+    Bullet *bullets;
+    real32 firingCoolDown;
 };
 
 
 int main(int argc, char **argv)
 {
+    GameState gameState = {};
     PfInitialize();
     PfGLConfig(4, 3, true);
     
@@ -131,16 +137,17 @@ int main(int argc, char **argv)
     real32 dT = 1.0f/fps;
     
 #if 1
-    char *imagePath = "../data/spaceship.png";
     PfglMakeCurrent(&window[0]);
+    char *imagePath = "../data/spaceship.png";
     int imageWidth, imageHeight, imageChannels;
     stbi_set_flip_vertically_on_load(true);
     unsigned char *imageData = stbi_load(imagePath, &imageWidth, &imageHeight, &imageChannels, 4);
-    uint32 textureId;
+    uint32 spaceshipTextureId;
     ASSERT(imageData, "Couldn't load image");
+    gameState.spaceshipDim = {(real32)imageWidth, (real32)imageHeight};
     GL_CALL(glActiveTexture(GL_TEXTURE0));
-    GL_CALL(glGenTextures(1, &textureId));
-    GL_CALL(glBindTexture(GL_TEXTURE_2D, textureId));
+    GL_CALL(glGenTextures(1, &spaceshipTextureId));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, spaceshipTextureId));
     GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, imageWidth, imageHeight, 0,
                          GL_RGBA, GL_UNSIGNED_BYTE, imageData));
     
@@ -149,14 +156,14 @@ int main(int argc, char **argv)
     GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER));
     GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER));
     GLfloat debugColor[] = {1.0f, 0.0f, 1.0f, 1.0f};
-    GL_CALL(glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, debugColor));
+    //GL_CALL(glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, debugColor));
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
     stbi_image_free(imageData);
     
     PfRect clientRect = PfGetClientRect(&window[0]);
     v2 max = {(real32)imageWidth/2.0f, (real32)imageHeight/2.0f};
     v2 min = {-((real32)imageWidth/2.0f), -((real32)imageHeight/2.0f)};
-    real32 vertices[] = 
+    real32 spaceshipVertices[] = 
     {
         // positions          // texture coords
         max.x, max.y, 0.0f,   1.0f, 1.0f, // top right
@@ -165,21 +172,21 @@ int main(int argc, char **argv)
         min.x, max.y, 0.0f,   0.0f, 1.0f  // top left 
     };
     
-    uint32 indices[] = 
+    uint32 quadIndices[] = 
     {
         0, 1, 3, // first triangle
         1, 2, 3  // second triangle
     };
     
-    uint32 vao, vbo, ebo;
-    GL_CALL(glGenVertexArrays(1, &vao));
+    uint32 spaceshipVao, vbo, ebo;
+    GL_CALL(glGenVertexArrays(1, &spaceshipVao));
     GL_CALL(glGenBuffers(1, &vbo));
     GL_CALL(glGenBuffers(1, &ebo));
-    GL_CALL(glBindVertexArray(vao));
+    GL_CALL(glBindVertexArray(spaceshipVao));
     GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, vbo));
-    GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW));
+    GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(spaceshipVertices), spaceshipVertices, GL_STATIC_DRAW));
     GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo));
-    GL_CALL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW));
+    GL_CALL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(quadIndices), quadIndices, GL_STATIC_DRAW));
     GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0));
     GL_CALL(glEnableVertexAttribArray(0));
     GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float))));
@@ -189,10 +196,10 @@ int main(int argc, char **argv)
     GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
     
     char *vertexShaderSource = 
-        "#version 430 core\nlayout (location = 0) in vec3 aPos;\nlayout (location = 1) in vec2 aTexCoord;\nout vec3 ourColor;\nout vec2 TexCoord;\nuniform mat4 orthoProjection;\nuniform mat4 translationMat;\nuniform mat4 rotationMatAboutZAxis;\nvoid main(){gl_Position =  orthoProjection * translationMat * rotationMatAboutZAxis * vec4(aPos, 1.0f);ourColor = vec3(1.0f, 1.0f, 1.0f);TexCoord = vec2(aTexCoord.x, aTexCoord.y);}";
+        "#version 430 core\nlayout (location = 0) in vec3 aPos;\nlayout (location = 1) in vec2 aTexCoord;\nout vec3 ourColor;\nout vec2 TexCoord;\nuniform mat4 orthoProjection;\nuniform mat4 translationMat;\nuniform mat4 rotationMatAboutZAxis;\nvoid main(){gl_Position =  orthoProjection * translationMat * rotationMatAboutZAxis * vec4(aPos, 1.0f);ourColor = vec3(1.0f, 0.0f, 0.0f);TexCoord = vec2(aTexCoord.x, aTexCoord.y);}";
     
     char *fragmentShaderSource = 
-        "#version 430 core\nout vec4 FragColor;in vec3 ourColor;in vec2 TexCoord;uniform sampler2D texture1;void main(){FragColor = texture(texture1, TexCoord);}";
+        "#version 430 core\nout vec4 FragColor;in vec3 ourColor;in vec2 TexCoord;uniform sampler2D texture1;void main(){FragColor = vec4(((texture(texture1, TexCoord) * (1.0f - 0.0f)) + (ourColor * 0.0f)).rgb, texture(texture1, TexCoord).a) ;}";
     
     uint32 vertexShader, fragmentShader;
     GL_CALL(vertexShader = glCreateShader(GL_VERTEX_SHADER));
@@ -226,7 +233,54 @@ int main(int argc, char **argv)
     GL_CALL(glAttachShader(programId, fragmentShader));
     GL_CALL(glLinkProgram(programId));
     GL_CALL(glDeleteShader(vertexShader));
-    GL_CALL(glDeleteShader(fragmentShader));  
+    GL_CALL(glDeleteShader(fragmentShader));
+    
+    // Load and upload image to the GPU
+    imagePath = "../data/shot1.png";
+    stbi_set_flip_vertically_on_load(true);
+    imageData = stbi_load(imagePath, &imageWidth, &imageHeight, &imageChannels, 4);
+    ASSERT(imageData, "Couldn't load image");
+    uint32 bulletTextureId;
+    GL_CALL(glActiveTexture(GL_TEXTURE0));
+    GL_CALL(glGenTextures(1, &bulletTextureId));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, bulletTextureId));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, imageWidth, imageHeight, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, imageData));
+    
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER));
+    GL_CALL(glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, debugColor));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    stbi_image_free(imageData);
+    
+    // Setting up VAO 
+    max = {(real32)imageWidth/2.0f, (real32)imageHeight/2.0f};
+    min = {-((real32)imageWidth/2.0f), -((real32)imageHeight/2.0f)};
+    real32 bulletVertices[] = 
+    {
+        // positions          // texture coords
+        max.x, max.y, 0.0f,   1.0f, 1.0f, // top right
+        max.x, min.y, 0.0f,   1.0f, 0.0f, // bottom right
+        min.x, min.y, 0.0f,   0.0f, 0.0f, // bottom left
+        min.x, max.y, 0.0f,   0.0f, 1.0f  // top left 
+    };
+    
+    uint32 bulletVao;
+    GL_CALL(glGenVertexArrays(1, &bulletVao));
+    GL_CALL(glGenBuffers(1, &vbo));
+    GL_CALL(glBindVertexArray(bulletVao));
+    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, vbo));
+    GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(bulletVertices), bulletVertices, GL_STATIC_DRAW));
+    GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0));
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float))));
+    GL_CALL(glEnableVertexAttribArray(1));
+    GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo));
+    GL_CALL(glBindVertexArray(0));
+    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, 0));
+    GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
 #endif
     
     PfRequestSwapInterval(1);
@@ -237,7 +291,6 @@ int main(int argc, char **argv)
     bool recording = false;
     bool playing = false;
     GameInput input = {};
-    GameState gameState = {};
     gameState.spaceshipPos = {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f};
     gameState.spaceshipVel = {};
     gameState.spaceshipRotation = 0.0f;
@@ -304,6 +357,7 @@ int main(int argc, char **argv)
             sprintf(inputFileName, "input_%d.input_series", playBackSlot);
             
             PfReadEntireFile(gameStateFileName, (void *)&gameState, sizeof(gameState));
+            //gameState.bullets = 0;
             inputFileHandle = PfCreateFile(inputFileName, PF_READ, PF_OPEN);
             ASSERT(inputFileHandle != -1, "File handle to read the input is invalid");
         }
@@ -355,7 +409,7 @@ int main(int argc, char **argv)
             input.left = PfGetKeyState(&window[0], PF_A);
             input.brake = PfGetKeyState(&window[0], PF_S);
             input.right = PfGetKeyState(&window[0], PF_D);
-            
+            input.fire = PfGetKeyState(&window[0], PF_SPACEBAR);
         }
         
         if(recording)
@@ -386,10 +440,9 @@ int main(int argc, char **argv)
         if(input.brake) breakingFactor = 3.0f;
         
         accelaration = accelaration - (gameState.spaceshipVel * breakingFactor);
-        
         v3 displacement = (gameState.spaceshipVel*dT) + (accelaration*0.5f*dT*dT);
-        
         gameState.spaceshipPos = gameState.spaceshipPos + displacement;
+        gameState.spaceshipVel = gameState.spaceshipVel + (accelaration * dT);
         
         if(gameState.spaceshipPos.x < 0.0f)
         {
@@ -399,8 +452,6 @@ int main(int argc, char **argv)
         {
             gameState.spaceshipPos.x = (real32)clientRect.width - gameState.spaceshipPos.x;
         }
-        
-        
         if(gameState.spaceshipPos.y < 0.0f)
         {
             gameState.spaceshipPos.y = (real32)clientRect.height + gameState.spaceshipPos.y;
@@ -410,19 +461,90 @@ int main(int argc, char **argv)
             gameState.spaceshipPos.y = (real32)clientRect.height - gameState.spaceshipPos.y;
         }
         
+        gameState.firingCoolDown -= dT;
+        real32 balance = 0.0f;
+        if(gameState.firingCoolDown <= 0.0f) 
+        {
+            balance = -gameState.firingCoolDown;
+            gameState.firingCoolDown = 0.0f; 
+        }
         
-        gameState.spaceshipVel = gameState.spaceshipVel + (accelaration * dT);
+        if(input.fire)
+        {
+            if(gameState.firingCoolDown == 0.0f)
+            {
+                Bullet *bullet = new Bullet;
+                bullet->pos = gameState.spaceshipPos + (forward * ((gameState.spaceshipDim.x * 0.5f) + 5.0f));
+                bullet->vel = forward * 1000.0f;
+                bullet->next = gameState.bullets;
+                bullet->duration = 1.0f;
+                gameState.bullets = bullet;
+                gameState.firingCoolDown = 0.3f;
+            }
+        }
+        else
+        {
+            gameState.firingCoolDown = 0.0f; 
+        }
+        
+        Bullet *previous = 0;
+        Bullet *bullet = gameState.bullets;
+        while(bullet)
+        {
+            bullet->duration -= dT;
+            if(bullet->duration <= 0.0f)
+            {
+                Bullet *toDelete = bullet;
+                if(previous)
+                {
+                    previous->next = bullet->next;
+                }
+                else
+                {
+                    gameState.bullets = bullet->next;
+                }
+                bullet = bullet->next;
+                delete toDelete;
+            }
+            else
+            {
+                bullet->pos = bullet->pos + (bullet->vel * dT);
+                /*
+                if(bullet->pos.x < 0.0f)
+                {
+                    bullet->pos.x = (real32)clientRect.width + bullet->pos.x;
+                }
+                else if(bullet->pos.x >= clientRect.width)
+                {
+                    bullet->pos.x = (real32)clientRect.width - bullet->pos.x;
+                }
+                
+                
+                if(bullet->pos.y < 0.0f)
+                {
+                    bullet->pos.y = (real32)clientRect.height + bullet->pos.y;
+                }
+                else if(bullet->pos.y >= clientRect.height)
+                {
+                    bullet->pos.y = (real32)clientRect.height - bullet->pos.y;
+                }
+                */
+                previous = bullet;
+                bullet = bullet->next;
+            }
+        }
+        
         
         PfglMakeCurrent(&window[0]);
-        GL_CALL(glClearColor(1.0f, 0.0f, 1.0f, 1.0f));
+        GL_CALL(glClearColor(0.0f, 0.0f, 0.0f, 1.0f));
         GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
         GL_CALL(GLboolean wasBlendEnabled = glIsEnabled(GL_BLEND));
         GL_CALL(glEnable(GL_BLEND));
         GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
         
         GL_CALL(glActiveTexture(GL_TEXTURE0));
-        GL_CALL(glBindTexture(GL_TEXTURE_2D, textureId));
-        GL_CALL(glBindVertexArray(vao));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, spaceshipTextureId));
+        GL_CALL(glBindVertexArray(spaceshipVao));
         GL_CALL(glUseProgram(programId));
         GL_CALL(GLint samplerUniformLocation = glGetUniformLocation(programId, "texture1"));
         GL_CALL(GLint rotationMatAboutZAxisUniformLocation = glGetUniformLocation(programId, "rotationMatAboutZAxis"));
@@ -432,23 +554,10 @@ int main(int argc, char **argv)
         GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
         
         mat4 rotationMatAboutZAxis = {};
-        real32 cosine = Cosine(DEG_TO_RAD * gameState.spaceshipRotation);
-        real32 sine = Sine(DEG_TO_RAD * gameState.spaceshipRotation);
-        rotationMatAboutZAxis.data[0] = cosine;
-        rotationMatAboutZAxis.data[1] = -sine;
-        rotationMatAboutZAxis.data[4] = sine;
-        rotationMatAboutZAxis.data[5] = cosine;
-        rotationMatAboutZAxis.data[10] = 1.0f;
-        rotationMatAboutZAxis.data[15] = 1.0f;
+        RotationAboutZAxis(&rotationMatAboutZAxis, gameState.spaceshipRotation);
         
         mat4 translationMat = {};
-        translationMat.data[0] = 1.0f; 
-        translationMat.data[5] = 1.0f; 
-        translationMat.data[10] = 1.0f; 
-        translationMat.data[3] = gameState.spaceshipPos.x;
-        translationMat.data[7] = gameState.spaceshipPos.y;
-        translationMat.data[11] = gameState.spaceshipPos.z;
-        translationMat.data[15] = 1.0f;
+        TranslationMat(&translationMat, gameState.spaceshipPos);
         
         mat4 orthoProjection = {};
         orthoProjection.data[0] = 2.0f/(real32)clientRect.width;
@@ -462,6 +571,24 @@ int main(int argc, char **argv)
         GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
         GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
         GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
+        
+        // Draw bullet
+        GL_CALL(glActiveTexture(GL_TEXTURE0));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, bulletTextureId));
+        GL_CALL(glBindVertexArray(bulletVao));
+        
+        Identity(&rotationMatAboutZAxis);
+        
+        bullet = gameState.bullets;
+        while(bullet)
+        {
+            TranslationMat(&translationMat, bullet->pos);
+            GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
+            GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
+            GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
+            GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
+            bullet = bullet->next;
+        }
         GL_CALL(glUseProgram(0));
         GL_CALL(glBindVertexArray(0));
         GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
