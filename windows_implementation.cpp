@@ -1,16 +1,16 @@
 #include <stdio.h>
 #include <intrin.h>  
+#include "utility.h"
+#include "project_types.h"
+#include "windows_platform_interface.h"
 
+#if defined(PF_WINDOW_AND_INPUT)
 #if !PF_GLEW_ENABLED
 #include <GL/gl.h>
 #endif
 
-#include "utility.h"
-#include "project_types.h"
-#include "windows_platform_interface.h"
-#define GLEW_STATIC
-
 #if PF_GLEW_ENABLED
+#define GLEW_STATIC
 #include <GL/glew.h>
 #endif
 
@@ -48,11 +48,9 @@ global_variable type_wglChoosePixelFormatARB* wglChoosePixelFormatARB;
 global_variable type_wglCreateContextAttribsARB* wglCreateContextAttribsARB;
 global_variable type_wglSwapIntervalEXT* wglSwapIntervalEXT;
 
-
 global_variable WNDCLASS globalWindowClass;
 global_variable int32 globalKeyboard[2][PF_ONE_PAST_LAST];
 global_variable int32 globalMouseButtons[5];
-global_variable int64 globalQueryPerformanceHZ;
 global_variable int32 globalGLMajorVersion = 3;
 global_variable int32 globalGLMinorVersion = 3;
 global_variable bool globalCoreProfile       = false;
@@ -316,7 +314,14 @@ global_variable char* globalWindowsVkCodeToStrMap[]=
     "VK_PA1",
     "VK_OEM_CLEAR"
 };
+#endif
 
+#if defined(PF_TIME)
+global_variable int64 globalQueryPerformanceHZ;
+#endif
+
+
+#if defined(PF_WINDOW_AND_INPUT)
 LRESULT CALLBACK WinWindowCallback(HWND windowHandle, UINT message, WPARAM wParam, LPARAM lParam)
 {
     /* NOTE(KARAN): Windows sends us two types of messages: Queued and non queued.
@@ -501,7 +506,7 @@ LRESULT CALLBACK WinWindowCallback(HWND windowHandle, UINT message, WPARAM wPara
     
     return result;
 }
-
+#endif
 
 
 
@@ -514,6 +519,8 @@ void PfInitialize()
     // 5. KeyCodes setup
     
     //// 1. Set up sleep timer resolution
+    
+#if defined(PF_TIME)
     UINT sleepResolution = 1; //ms
     if(timeBeginPeriod(sleepResolution) != TIMERR_NOERROR)
     {
@@ -527,7 +534,9 @@ void PfInitialize()
     ASSERT(result != 0, "Failed to get performance counter frequency");
     
     globalQueryPerformanceHZ  = queryPerformanceHZResult.QuadPart;
+#endif
     
+#if defined(PF_WINDOW_AND_INPUT)
     //// 3. Register Window Class
     // NOTE(KARAN): CS_OWNDC necessary for OpenGL context creation
     globalWindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
@@ -1124,8 +1133,10 @@ Once a window's pixel format is set, it cannot be changed.
         }
     }
 #endif
+#endif
 }
 
+#if defined(PF_WINDOW_AND_INPUT)
 #if 1
 void WinCreateOpenGLContext(PfWindow *window)
 {
@@ -1226,7 +1237,6 @@ void PfResizeWindow(PfWindow *window, int32 width, int32 height)
     }
     
 }
-
 
 void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32 width, int32 height)
 {
@@ -1548,32 +1558,6 @@ bool PfGetMouseCoordinates(PfWindow *window, int32 *x, int32 *y)
     return result;
 }
 
-
-PfTimestamp PfGetTimestamp()
-{
-    int64 result;
-    LARGE_INTEGER temp;
-    QueryPerformanceCounter(&temp);
-    result = temp.QuadPart;
-    return result;
-}
-
-real32 PfGetSeconds(int64 startTime, int64 endTime)
-{
-    real32 result;
-    real32 a = (real32)(endTime - startTime);
-    real32 b = (real32)(globalQueryPerformanceHZ);
-    result = a/b;
-    return result;
-}
-
-uint64 PfRdtsc()
-{
-    uint64 result;
-    result = __rdtsc();  
-    return result;
-}
-
 void PfSetWindowTitle(PfWindow *window, char *title)
 {
     SetWindowTextA(window->windowHandle, title);
@@ -1632,13 +1616,6 @@ void PfglSwapBuffers(PfWindow *window)
     SwapBuffers(window->deviceContext);
 }
 
-void PfSleep(int32 milliseconds)
-{
-    if(milliseconds > 0)
-    {
-        Sleep(milliseconds);
-    }
-}
 
 void PfUpdate()
 {
@@ -1670,6 +1647,7 @@ void PfUpdate()
     }
 }
 
+
 bool PfRequestSwapInterval(int32 frames)
 {
     bool result = false;
@@ -1680,7 +1658,45 @@ bool PfRequestSwapInterval(int32 frames)
     return result;
 }
 
+#endif
 
+#if defined(PF_TIME)
+PfTimestamp PfGetTimestamp()
+{
+    int64 result;
+    LARGE_INTEGER temp;
+    QueryPerformanceCounter(&temp);
+    result = temp.QuadPart;
+    return result;
+}
+
+real32 PfGetSeconds(int64 startTime, int64 endTime)
+{
+    real32 result;
+    real32 a = (real32)(endTime - startTime);
+    real32 b = (real32)(globalQueryPerformanceHZ);
+    result = a/b;
+    return result;
+}
+
+uint64 PfRdtsc()
+{
+    uint64 result;
+    result = __rdtsc();  
+    return result;
+}
+
+void PfSleep(int32 milliseconds)
+{
+    if(milliseconds > 0)
+    {
+        Sleep(milliseconds);
+    }
+}
+#endif
+
+
+#if defined(PF_FILE)
 int64 PfWriteEntireFile(char *filename, void *data, uint32 size)
 {
     HANDLE fileHandle = CreateFileA(filename, GENERIC_WRITE, NULL, NULL, CREATE_ALWAYS, NULL, NULL);
@@ -1813,3 +1829,4 @@ int64 PfWriteFile(int64 fileHandle, void *data, uint32 size)
     
     return bytesWritten;
 }
+#endif

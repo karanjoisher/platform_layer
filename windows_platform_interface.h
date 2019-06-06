@@ -4,7 +4,11 @@
 #include "project_types.h"
 //#include <GL/gl.h>
 
+#if defined(PF_TIME)
 typedef int64 PfTimestamp;
+#endif
+
+#if defined(PF_WINDOW_AND_INPUT)
 
 struct WinOffscreenBuffer
 {
@@ -50,5 +54,6 @@ struct PfWindow
     int32 vao;
     uint32 programId;
 };
+#endif
 
 #include "api_interface.h"

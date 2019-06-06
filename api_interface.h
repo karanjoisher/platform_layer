@@ -1,6 +1,6 @@
 #pragma once
 
-
+#if defined(PF_WINDOW_AND_INPUT)
 global_variable char *globalPfKeyCodeToStrMap[]
 {
     "PF_NULL",
@@ -239,13 +239,20 @@ enum PfKeyCode
     PF_NUMPAD_ENTER,
     PF_ONE_PAST_LAST,
 };
+#endif
 
+#if defined(PF_FILE)
 #define PF_READ ((uint32)(1 << 0))
 #define PF_WRITE ((uint32)(1 << 1))
 #define PF_CREATE ((uint32)(1 << 2))
 #define PF_OPEN ((uint32)(1 << 3))
+#endif
 
+// Initialization
 void PfInitialize();
+
+#if defined(PF_WINDOW_AND_INPUT)
+// Windowing, I/O
 void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32 width, int32 height);
 void PfResizeWindow(PfWindow *window, int32 width, int32 height);
 PfRect PfGetClientRect(PfWindow *window);
@@ -258,17 +265,25 @@ int32 PfGetKeyState(PfWindow *window, PfKeyCode keyCode, bool isVkCode);
 int32 PfGetMouseButtonState(PfWindow *window, int32 index);
 int32 PfGetMouseButtonState(int32 index);
 bool PfGetMouseCoordinates(PfWindow *window, int32 *x, int32 *y);
-PfTimestamp PfGetTimestamp();
-real32 PfGetSeconds(PfTimestamp startTime, PfTimestamp endTime);
-uint64 PfRdtsc();
 void PfSetWindowTitle(PfWindow *window, char *title);
 void PfglRenderWindow(PfWindow *window);
 void PfglMakeCurrent(PfWindow *window); 
 void PfGLConfig(int32 glMajorVersion, int32 glMinorVersion, bool coreProfile);
 void PfglSwapBuffers(PfWindow *window);
-void PfSleep(int32 milliseconds);
 void PfUpdate();
 bool PfRequestSwapInterval(int32 frames);
+#endif
+
+// Timing
+#if defined(PF_TIME)
+PfTimestamp PfGetTimestamp();
+real32 PfGetSeconds(PfTimestamp startTime, PfTimestamp endTime);
+uint64 PfRdtsc();
+void PfSleep(int32 milliseconds);
+#endif
+
+// File I/O
+#if defined(PF_FILE)
 int64 PfWriteEntireFile(char *filename, void *data, uint32 size);
 int64 PfReadEntireFile(char *filename, void *data, uint32 size);
 int64 PfWriteFile(int64 fileHandle, void *data, uint32 size);
@@ -276,3 +291,4 @@ int64 PfReadFile(int64 fileHandle, void *data, uint32 size);
 int64 PfCreateFile(char *filename, uint32 access, uint32 creationDisposition);
 bool PfCloseFileHandle(int64 fileHandle);
 bool PfDeleteFile(char *filename);
+#endif
