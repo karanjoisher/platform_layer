@@ -17,5 +17,6 @@ typedef uint64_t uint64;
 
 typedef float real32;
 typedef double real64;
+typedef size_t sizet;
 
 #define MAX_INT32 0xFFFFFFFF

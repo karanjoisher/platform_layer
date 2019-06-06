@@ -22,6 +22,11 @@
 #endif
 
 
+#define KILOBYTES(Value) ((Value)*1024LL)
+#define MEGABYTES(Value) (KILOBYTES(Value)*1024LL)
+#define GIGABYTES(Value) (MEGABYTES(Value)*1024LL)
+#define TERABYTES(Value) (GIGABYTES(Value)*1024LL)
+
 bool AreStringsSame(char *str1, char *str2)
 {
     bool result = true;

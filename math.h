@@ -245,3 +245,12 @@ real32 RemapRange(real32 initialMin, real32 initialMax, real32 newMin, real32 ne
     result = (((initialValue - initialMin)/(initialMax - initialMin)) * (newMax - newMin)) + newMin;
     return result;
 }
+
+
+bool CircleWithCircleCollisionTest(v2 c1, real32 r1, v2 c2, real32 r2)
+{
+    real32 squaredDistance = SquaredMagnitude(c2 - c1);
+    real32 collisionDistance = r1 + r2;
+    real32 squaredCollisionDistance = collisionDistance * collisionDistance;
+    return (squaredDistance <= squaredCollisionDistance);
+}
