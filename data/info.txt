@@ -1,3 +1,0 @@
-ship radius: 35
-missile radius: 3
-asteroid radius: 40

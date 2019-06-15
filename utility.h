@@ -77,3 +77,47 @@ void ClearArray(char *array, int size, char clearValue = 0)
         *array++ = clearValue;
     }
 }
+
+bool EndsWith(char *source, char *endStr)
+{
+    int sourceLength = 0;
+    for(;source[sourceLength] != 0; sourceLength++);
+    
+    int endStrLength = 0;
+    for(;endStr[endStrLength] != 0; endStrLength++);
+    
+    int sourceIndex = sourceLength - endStrLength;
+    bool areSame = true;
+    for(int i = 0; i < endStrLength; i++)
+    {
+        areSame = source[sourceIndex + i] == endStr[i];
+        if(!areSame)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void ConcatenateStrings(char *str1, char *str2, char *dest)
+{
+    int destIndex = 0;
+    for(int i = 0; str1[i] != 0; i++, destIndex++)
+    {
+        dest[destIndex] = str1[i]; 
+    }
+    
+    for(int i = 0; str2[i] != 0; i++, destIndex++)
+    {
+        dest[destIndex] = str2[i]; 
+    }
+    
+    dest[destIndex + 1] = 0;
+}
+
+int GetStrLength(char *str)
+{
+    int length = 0;
+    for(;str[length] != 0; length++);
+    return length;
+}

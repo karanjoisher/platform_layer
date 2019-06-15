@@ -8,11 +8,13 @@
 #include <malloc.h>
 #include <time.h>
 #include <string.h>
-
+#include <sys/mman.h>
 #include <X11/Xresource.h>
 #include <X11/XKBlib.h>
 #include "pf_opengl.h"
 #include <GL/glx.h>
+
+#if defined(PF_WINDOW_AND_INPUT)
 
 global_variable XContext globalXlibContext;
 global_variable Display*  globalDisplay;
@@ -129,10 +131,12 @@ bool IsExtensionSupported(const char *extList, const char *extension)
     
     return false;
 }
+#endif
 
 
 void PfInitialize()
 {
+#if defined(PF_WINDOW_AND_INPUT)
     globalXlibContext = XUniqueContext();
     
     /* NOTE(KARAN): XOpenDisplay opens a connection between the XServer and the window. 
@@ -510,8 +514,10 @@ void PfInitialize()
     }
     XFree(keyCodeToKeySyms);
 #endif
+#endif
 }
 
+#if defined(PF_WINDOW_AND_INPUT)
 void PfResizeWindow(PfWindow *window, int32 width, int32 height)
 {
     if(window->offscreenBuffer.data)
@@ -972,74 +978,6 @@ bool PfGetMouseCoordinates(PfWindow *window, int32 *x, int32 *y)
 }
 
 
-PfTimestamp PfGetTimestamp()
-{
-    PfTimestamp result = {};
-    clock_gettime(CLOCK_MONOTONIC, &result);
-    return result;
-}
-
-inline void HandleNanoSecondOverflow(PfTimestamp *timestamp)
-{
-    if (timestamp->tv_nsec >= 1000000000L)
-    {
-        timestamp->tv_nsec -= 1000000000L;       
-        timestamp->tv_sec++;
-    }
-}
-
-real32 PfGetSeconds(PfTimestamp startTime, PfTimestamp endTime)
-{
-    timespec result = {};
-    if(endTime.tv_nsec < startTime.tv_nsec)
-    {
-        result.tv_sec = (endTime.tv_sec - 1) - startTime.tv_sec; // NOTE(KARAN): Borrowing from seconds part 
-        result.tv_nsec = endTime.tv_nsec + 1000000000L - endTime.tv_nsec; 
-    }
-    else
-    {
-        result.tv_sec = endTime.tv_sec - startTime.tv_sec;
-        result.tv_nsec = endTime.tv_nsec - startTime.tv_nsec; 
-    }
-    
-    HandleNanoSecondOverflow(&result);
-    
-    real32 nanoSecondsToSeconds = ((real32)result.tv_nsec)/1000000000.0f;
-    real32 seconds = ((real32)result.tv_sec) + nanoSecondsToSeconds;
-    
-    return seconds;
-}
-
-inline timespec AddTimespec(timespec t1, timespec t2)
-{
-    timespec result = {};
-    result.tv_nsec = t1.tv_nsec + t2.tv_nsec;
-    result.tv_sec = t1.tv_sec + t2.tv_sec;
-    HandleNanoSecondOverflow(&result);
-    return result;
-}
-
-
-
-#if defined(__i386__)
-
-__inline__ uint64  PfRdtsc(void)
-{
-    uint64 x;
-    __asm__ volatile (".byte 0x0f, 0x31" : "=A" (x));
-    return x;
-}
-
-#elif defined(__x86_64__)
-
-__inline__ uint64 PfRdtsc(void)
-{
-    unsigned hi, lo;
-    __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
-    return ( (uint64)lo)|( ((uint64)hi)<<32 );
-}
-#endif
-
 
 void PfSetWindowTitle(PfWindow *window, char *title)
 {
@@ -1128,19 +1066,6 @@ void PfglSwapBuffers(PfWindow *window)
 {
     glXSwapBuffers(window->display, window->windowHandle);
 }
-
-void PfSleep(int32 milliseconds)
-{
-    if(milliseconds > 0)
-    {
-        timespec sleepTime = {0, milliseconds * 1000000};
-        timespec sleepTimeEnd = AddTimespec(PfGetTimestamp(), sleepTime);
-        while(clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &sleepTimeEnd,0) != 0)
-        {
-        }
-    }
-}
-
 
 
 bool IsKeyPadSym(KeySym keySym)
@@ -1372,6 +1297,107 @@ bool PfRequestSwapInterval(int32 frames)
 }
 
 
+#endif
+
+#if defined(PF_TIME)
+PfTimestamp PfGetTimestamp()
+{
+    PfTimestamp result = {};
+    clock_gettime(CLOCK_MONOTONIC, &result);
+    return result;
+}
+
+inline void HandleNanoSecondOverflow(PfTimestamp *timestamp)
+{
+    while(timestamp->tv_nsec >= 1000000000L)
+    {
+        timestamp->tv_nsec -= 1000000000L;       
+        timestamp->tv_sec++;
+    }
+}
+
+real32 PfGetSeconds(PfTimestamp startTime, PfTimestamp endTime)
+{
+    return ((real32)(endTime.tv_sec - startTime.tv_sec)
+            + ((real32)(endTime.tv_nsec - startTime.tv_nsec) * 1e-9f));
+    
+    /*
+    HandleNanoSecondOverflow(&startTime);
+    HandleNanoSecondOverflow(&endTime);
+    
+    timespec result = {};
+    if(endTime.tv_nsec < startTime.tv_nsec)
+    {
+        result.tv_sec = (endTime.tv_sec - 1) - startTime.tv_sec; // NOTE(KARAN): Borrowing from seconds part 
+        result.tv_nsec = endTime.tv_nsec + 1000000000L - endTime.tv_nsec; 
+    }
+    else
+    {
+        result.tv_sec = endTime.tv_sec - startTime.tv_sec;
+        result.tv_nsec = endTime.tv_nsec - startTime.tv_nsec; 
+    }
+    
+    HandleNanoSecondOverflow(&result);
+    
+    real32 nanoSecondsToSeconds = ((real32)result.tv_nsec)/1000000000.0f;
+    real32 seconds = ((real32)result.tv_sec) + nanoSecondsToSeconds;
+    
+    return seconds;*/
+}
+
+inline timespec AddTimespec(timespec t1, timespec t2)
+{
+    timespec result = {};
+    result.tv_nsec = t1.tv_nsec + t2.tv_nsec;
+    result.tv_sec = t1.tv_sec + t2.tv_sec;
+    HandleNanoSecondOverflow(&result);
+    return result;
+}
+
+
+
+#if defined(__i386__)
+
+__inline__ uint64  PfRdtsc(void)
+{
+    uint64 x;
+    __asm__ volatile (".byte 0x0f, 0x31" : "=A" (x));
+    return x;
+}
+
+#elif defined(__x86_64__)
+
+__inline__ uint64 PfRdtsc(void)
+{
+    unsigned hi, lo;
+    __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+    return ( (uint64)lo)|( ((uint64)hi)<<32 );
+}
+#endif
+
+void PfSleep(int32 milliseconds)
+{
+    if(milliseconds > 0)
+    {
+        usleep(milliseconds * 1000);
+    }
+    // TODO(KARAN): Find which is better: clock_nanosleep or usleep
+    /*
+    if(milliseconds > 0)
+    {
+        timespec sleepTime = {0, milliseconds * 1000000};
+        timespec sleepTimeEnd = AddTimespec(PfGetTimestamp(), sleepTime);
+        while(clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &sleepTimeEnd,0) != 0)
+        {
+        }
+    }
+    */
+}
+
+#endif
+
+
+#if defined(PF_FILE)
 int64 PfWriteEntireFile(char *filename, void *data, uint32 size)
 {
     ssize_t bytesWritten;
@@ -1394,7 +1420,15 @@ int64 PfWriteEntireFile(char *filename, void *data, uint32 size)
 }
 
 
-int64 PfReadEntireFile(char *filename, void *data, uint32 size)
+uint64 PfGetFileSize(char *filepath)
+{
+    struct stat stat_buf = {};
+    stat(filepath, &stat_buf);
+    
+    return (uint64)(stat_buf.st_size);
+}
+
+int64 PfReadEntireFile(char *filename, void *data)
 {
     ssize_t bytesRead;
     int64 fileHandle = open(filename, O_RDONLY);
@@ -1405,6 +1439,7 @@ int64 PfReadEntireFile(char *filename, void *data, uint32 size)
         return -1;
     }
     
+    uint32 size = PfGetFileSize(filename);
     bytesRead = read(fileHandle, data, size);
     if(bytesRead != size)
     {
@@ -1495,3 +1530,144 @@ int64 PfWriteFile(int64 fileHandle, void *data, uint32 size)
     
     return bytesWritten;
 }
+
+
+bool PfFilepathExists(char *filepath)
+{
+    return (access(filepath, F_OK) == 0);
+}
+
+
+#endif
+
+
+void* PfVirtualAlloc(void *baseAddress, size_t size)
+{
+    int32 flags = MAP_PRIVATE | MAP_ANONYMOUS;
+    if(baseAddress)
+    {
+        flags = flags | MAP_FIXED;
+    }
+    
+    return mmap(baseAddress, size, PROT_READ|PROT_WRITE, flags, -1, 0);
+}
+
+
+#if defined(PF_SOUND)
+#define EXIT_ON_ALSA_ERROR(alsaReturnCode) if((alsaReturnCode) < 0){DEBUG_ERROR("%s\n", snd_strerror(alsaReturnCode)); exit(alsaReturnCode);}
+
+PfSoundSystem PfInitializeSoundSystem(uint64 bufferDurationInFrames, uint32 bitsPerSample, uint32 numChannels, uint32 framesPerSecond)
+{
+    if(bitsPerSample != 16)
+    {
+        ASSERT(false, "Currently only supports 16bit audio");
+    }
+    
+    real32 periodDurationInMS = 3.0f; //10.0f;
+    int32 framesPerPeriod = CeilReal32ToInt32(periodDurationInMS * ((real32)framesPerSecond/1000.0f));
+    uint32 numPeriods = CeilReal32ToUint32((real32)bufferDurationInFrames/(real32)framesPerPeriod);
+    
+    PfSoundSystem result = {};
+    int32 alsaReturnCode;
+    
+    snd_pcm_hw_params_t *hardwareParams;
+    snd_pcm_hw_params_alloca(&hardwareParams);
+    
+    alsaReturnCode = snd_pcm_open(&(result.soundDeviceHandle), (char*)"default", SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK);
+    EXIT_ON_ALSA_ERROR(alsaReturnCode);
+    
+    alsaReturnCode = snd_pcm_hw_params_any(result.soundDeviceHandle, hardwareParams);
+    EXIT_ON_ALSA_ERROR(alsaReturnCode);
+    
+    //DEBUG_LOG("Before init:\n");
+    //DebugLinuxPrintALSAParams(result.soundDeviceHandle, hardwareParams);
+    //DEBUG_LOG("---------------------------\n");
+    alsaReturnCode = snd_pcm_hw_params_set_access(result.soundDeviceHandle, hardwareParams, SND_PCM_ACCESS_RW_INTERLEAVED);
+    EXIT_ON_ALSA_ERROR(alsaReturnCode);
+    
+    alsaReturnCode = snd_pcm_hw_params_set_format(result.soundDeviceHandle, hardwareParams, SND_PCM_FORMAT_S16_LE);
+    EXIT_ON_ALSA_ERROR(alsaReturnCode);
+    
+    alsaReturnCode = snd_pcm_hw_params_set_channels(result.soundDeviceHandle, hardwareParams, numChannels);
+    EXIT_ON_ALSA_ERROR(alsaReturnCode);
+    
+    alsaReturnCode = snd_pcm_hw_params_set_rate(result.soundDeviceHandle, hardwareParams, framesPerSecond, 0);
+    EXIT_ON_ALSA_ERROR(alsaReturnCode);
+    
+    alsaReturnCode = snd_pcm_hw_params_set_buffer_size(result.soundDeviceHandle, hardwareParams, bufferDurationInFrames);
+    EXIT_ON_ALSA_ERROR(alsaReturnCode);
+    
+    int32 dir = 0;
+    alsaReturnCode = snd_pcm_hw_params_set_period_size_near(result.soundDeviceHandle, hardwareParams, (snd_pcm_uframes_t*)(&framesPerPeriod), &dir);
+    EXIT_ON_ALSA_ERROR(alsaReturnCode);
+    if(dir != 0)
+    {
+        DEBUG_ERROR("WARNING: Cannot set period size to the prefered value. Instead using %d samples per period.\n", framesPerPeriod);
+    }
+    
+    alsaReturnCode = snd_pcm_hw_params_set_periods_near(result.soundDeviceHandle, hardwareParams, &numPeriods, &dir);
+    EXIT_ON_ALSA_ERROR(alsaReturnCode);
+    if(dir != 0)
+    {
+        DEBUG_ERROR("WARNING: Cannot set num periods to the prefered value. Instead using %d periods per buffer.\n", numPeriods);
+    }
+    
+    alsaReturnCode = snd_pcm_hw_params(result.soundDeviceHandle, hardwareParams);
+    EXIT_ON_ALSA_ERROR(alsaReturnCode);
+    //DEBUG_LOG("After init:\n");
+    //DebugLinuxPrintALSAParams(result.soundDeviceHandle, hardwareParams);
+    result.secondarySoundBuffer = mmap(0, bufferDurationInFrames * numChannels * (bitsPerSample/8), PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    result.bufferDurationInFrames = bufferDurationInFrames;
+    return result;
+}
+
+uint64 PfGetPendingFrames(PfSoundSystem *soundSystem)
+{
+    int32 availableFrames = snd_pcm_avail(soundSystem->soundDeviceHandle);	
+    
+    if(availableFrames == -EPIPE)
+    {
+        DEBUG_ERROR("UNDERRUN: %s.\n", snd_strerror(availableFrames));
+        snd_pcm_prepare(soundSystem->soundDeviceHandle);
+        availableFrames = 0;
+    }
+    else if(availableFrames < 0)
+    {
+        DEBUG_ERROR("%s, PCM state: %s.\n", snd_strerror(availableFrames), snd_pcm_state_name(snd_pcm_state(soundSystem->soundDeviceHandle)));
+        availableFrames = 0;
+    }
+    
+    uint64 result = (uint64)(soundSystem->bufferDurationInFrames - availableFrames);
+    
+    return result;
+}
+
+PfSoundBuffer PfGetSoundBuffer(PfSoundSystem *soundSystem, uint64 framesRequired)
+{
+    PfSoundBuffer result = {};
+    result.buffer = soundSystem->secondarySoundBuffer;
+    result.frames = framesRequired;
+    return result;
+}
+
+void PfDispatchSoundBuffer(PfSoundSystem *soundSystem, PfSoundBuffer *soundBuffer)
+{
+    int32 alsaReturnCode = snd_pcm_writei(soundSystem->soundDeviceHandle, soundBuffer->buffer, soundBuffer->frames);
+    
+    if(alsaReturnCode == -EPIPE)
+    {
+        DEBUG_ERROR("UNDERRUN: %s.\n", snd_strerror(alsaReturnCode));
+        snd_pcm_prepare(soundSystem->soundDeviceHandle);
+    }
+    else if(alsaReturnCode < 0)
+    {
+        DEBUG_ERROR("%s, PCM state: %s.\n", snd_strerror(alsaReturnCode), snd_pcm_state_name(snd_pcm_state(soundSystem->soundDeviceHandle)));
+    }
+}
+
+
+void PfStartSoundSystem(PfSoundSystem *soundSystem)
+{
+    snd_pcm_start(soundSystem->soundDeviceHandle);
+}
+#endif

@@ -2,3 +2,5 @@ build
 glew
 old_version
 *.hbackup
+wave_file_pcm_extractor.cpp
+wav.cpp

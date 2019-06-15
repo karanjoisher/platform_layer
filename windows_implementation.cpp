@@ -4,6 +4,14 @@
 #include "project_types.h"
 #include "windows_platform_interface.h"
 
+#if defined(PF_SOUND)
+const CLSID CLSID_MMDeviceEnumerator = __uuidof(MMDeviceEnumerator);
+const IID IID_IMMDeviceEnumerator = __uuidof(IMMDeviceEnumerator);
+const IID IID_IAudioClient = __uuidof(IAudioClient);
+const IID IID_IAudioRenderClient = __uuidof(IAudioRenderClient);
+const IID IID_IAudioClock = __uuidof(IAudioClock);
+#endif
+
 #if defined(PF_WINDOW_AND_INPUT)
 #if !PF_GLEW_ENABLED
 #include <GL/gl.h>
@@ -1293,7 +1301,7 @@ void PfCreateWindow(PfWindow *window, char *title, int32 xPos, int32 yPos, int32
     }
 #endif
     
-    DEBUG_LOG("OpenGL version: %s\n\n", glGetString(GL_VERSION));
+    //DEBUG_LOG("OpenGL version: %s\n\n", glGetString(GL_VERSION));
     
     uint32 vbo, vao, ebo;
     GL_CALL(glGenVertexArrays(1, &vao));
@@ -1718,16 +1726,25 @@ int64 PfWriteEntireFile(char *filename, void *data, uint32 size)
 }
 
 
-int64 PfReadEntireFile(char *filename, void *data, uint32 size)
+uint64 PfGetFileSize(char *filepath)
+{
+    uint64 result = 0;
+    WIN32_FILE_ATTRIBUTE_DATA fileAttrData = {};
+    GetFileAttributesEx(filepath, GetFileExInfoStandard, &fileAttrData);
+    result = (((uint64)fileAttrData.nFileSizeHigh) << 32) | ((uint64)fileAttrData.nFileSizeLow);
+    return result;
+}
+
+int64 PfReadEntireFile(char *filename, void *data)
 {
     HANDLE fileHandle = CreateFileA(filename, GENERIC_READ, NULL, NULL, OPEN_EXISTING, NULL, NULL);
-    
     if(fileHandle == INVALID_HANDLE_VALUE)
     {
         DEBUG_ERROR("Could not open %s for reading.", filename);
         return -1;
     }
     
+    uint32 size = (uint32)PfGetFileSize(filename);
     DWORD bytesRead;
     ReadFile(fileHandle, data, size, &bytesRead, NULL);
     if(bytesRead != size)
@@ -1828,5 +1845,118 @@ int64 PfWriteFile(int64 fileHandle, void *data, uint32 size)
     }
     
     return bytesWritten;
+}
+
+bool PfFilepathExists(char *filepath)
+{
+    bool result;
+    WIN32_FIND_DATAA findData = {};
+    HANDLE searchHandle = FindFirstFileA(filepath, &findData);
+    result = searchHandle != INVALID_HANDLE_VALUE;
+    FindClose(searchHandle);
+    return result;
+}
+
+#endif
+
+void* PfVirtualAlloc(void *baseAddress, size_t size)
+{
+    return VirtualAlloc(baseAddress, size, MEM_COMMIT | MEM_RESERVE,PAGE_READWRITE);
+}
+
+
+#if defined(PF_SOUND)
+#define EXIT_ON_WASAPI_ERROR(hres) if (FAILED(hres)) { DEBUG_ERROR("Wasapi initialization failed: Error code: 0x%x", hres); ExitProcess(hres);}
+
+PfSoundSystem PfInitializeSoundSystem(uint64 bufferDurationInFrames, uint32 bitsPerSample, uint32 numChannels, uint32 framesPerSecond)
+{
+    WAVEFORMATEX waveFormat =  {};
+    waveFormat.wFormatTag = WAVE_FORMAT_PCM;
+    waveFormat.nChannels = (WORD)numChannels;
+    waveFormat.wBitsPerSample = (WORD)bitsPerSample;
+    waveFormat.nSamplesPerSec = framesPerSecond;
+    waveFormat.nBlockAlign = (waveFormat.wBitsPerSample * waveFormat.nChannels)/8;
+    waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
+    
+    
+    PfSoundSystem result = {};
+    
+    HRESULT COMinitialization = CoInitializeEx(0, COINIT_MULTITHREADED);
+    EXIT_ON_WASAPI_ERROR(COMinitialization);
+    
+    IMMDeviceEnumerator *deviceEnumerator;
+    HRESULT deviceEnumeratorCreation = CoCreateInstance(CLSID_MMDeviceEnumerator,NULL,CLSCTX_ALL,IID_IMMDeviceEnumerator,
+                                                        (void**)(&deviceEnumerator));
+    EXIT_ON_WASAPI_ERROR(deviceEnumeratorCreation);
+    
+    IMMDevice *soundOutputDeviceHandle;
+    HRESULT soundOutputDeviceHandleRetrieval =  deviceEnumerator->GetDefaultAudioEndpoint(eRender,eConsole,&soundOutputDeviceHandle);
+    EXIT_ON_WASAPI_ERROR(soundOutputDeviceHandleRetrieval);
+    
+    HRESULT soundOutputDeviceActivation = soundOutputDeviceHandle->Activate(IID_IAudioClient,CLSCTX_ALL,0,(void**)(&result.audioClient));
+    EXIT_ON_WASAPI_ERROR(soundOutputDeviceActivation);
+    
+    /*result.audioClient->GetDevicePeriod(&defaultLatency, &minimumLatency);
+    defaultLatencyMS = (real32)defaultLatency/10000.0f;
+    minimumLatencyMS = (real32)minimumLatency/10000.0f;*/
+    
+    real32 bufferDurationInMS = ((real32)bufferDurationInFrames/(real32)framesPerSecond) * 1000.0f;
+    
+    REFERENCE_TIME bufferDurationHNS = CeilReal32ToInt64(bufferDurationInMS * 10000.0f);
+    
+    HRESULT audioStreamInitialization = result.audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED , 0,
+                                                                       bufferDurationHNS,
+                                                                       0,
+                                                                       &waveFormat,0);
+    EXIT_ON_WASAPI_ERROR(audioStreamInitialization);
+    
+    HRESULT soundOutputClientDeviceResult = result.audioClient->GetService(IID_IAudioRenderClient,(void**)(&result.audioRenderClient));
+    EXIT_ON_WASAPI_ERROR(soundOutputClientDeviceResult);
+    
+    HRESULT soundOutputClockResult = result.audioClient->GetService(IID_IAudioClock,(void**)(&result.audioClock));
+    EXIT_ON_WASAPI_ERROR(soundOutputClockResult);
+    
+    uint64 actualBufferFrames = bufferDurationInFrames;
+    result.audioClient->GetBufferSize((uint32*)(&actualBufferFrames));
+    
+    HRESULT hr;
+    hr = result.audioClock->GetFrequency(&(result.audioClockFrequency));
+    EXIT_ON_WASAPI_ERROR(hr);
+    
+    result.bufferDurationInFrames = actualBufferFrames;
+    return result;
+}
+
+uint64 PfGetPendingFrames(PfSoundSystem *soundSystem)
+{
+    uint64 pendingFrames = 0;
+    HRESULT hr;
+    hr = soundSystem->audioClient->GetCurrentPadding((uint32*)&pendingFrames);
+    EXIT_ON_WASAPI_ERROR(hr);
+    return pendingFrames;
+}
+
+PfSoundBuffer PfGetSoundBuffer(PfSoundSystem *soundSystem, uint64 framesRequired)
+{
+    HRESULT hr;
+    PfSoundBuffer soundBuffer = {};
+    hr = soundSystem->audioRenderClient->GetBuffer((uint32)framesRequired, (BYTE**)(&(soundBuffer.buffer)));
+    EXIT_ON_WASAPI_ERROR(hr);
+    soundBuffer.frames = framesRequired;
+    return soundBuffer;
+}
+
+void PfDispatchSoundBuffer(PfSoundSystem *soundSystem, PfSoundBuffer *soundBuffer)
+{
+    HRESULT hr;
+    hr = soundSystem->audioRenderClient->ReleaseBuffer((uint32)soundBuffer->frames, 0);
+    EXIT_ON_WASAPI_ERROR(hr);
+}
+
+void PfStartSoundSystem(PfSoundSystem *soundSystem)
+{
+    HRESULT hr;
+    hr = soundSystem->audioClient->Start();
+    EXIT_ON_WASAPI_ERROR(hr);
 }
 #endif

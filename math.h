@@ -4,6 +4,7 @@
 #define DEG_TO_RAD (PI/180.0f)
 #define RAD_TO_DEG (180.0f/PI)
 
+#pragma pack(push, 1)
 struct v2
 {
     real32 x;
@@ -21,9 +22,10 @@ struct v4
 {
     real32 x;
     real32 y;
-    real32 z;
     real32 w;
+    real32 h;
 };
+#pragma pack(pop)
 
 struct mat4
 {
@@ -253,4 +255,81 @@ bool CircleWithCircleCollisionTest(v2 c1, real32 r1, v2 c2, real32 r2)
     real32 collisionDistance = r1 + r2;
     real32 squaredCollisionDistance = collisionDistance * collisionDistance;
     return (squaredDistance <= squaredCollisionDistance);
+}
+
+
+inline static int64 CeilReal32ToInt64(real32 real32Value)
+{
+    // TODO(KARAN): roundf is too slow, replace it with something faster
+    
+    // Doing roundf for every pixel tanked the 
+    // frame rate from 30ms to 500ms.
+    
+    int64 result = (int64)(real32Value + 0.5f);
+    //int32 result = (int32)(ceilf(real32Value));
+    return result;
+}
+
+
+inline static uint64 CeilReal32ToUint64(real32 real32Value)
+{
+    // TODO(KARAN): roundf is too slow, replace it with something faster
+    
+    // Doing roundf for every pixel tanked the 
+    // frame rate from 30ms to 500ms.
+    
+    uint64 result = (uint64)(real32Value + 0.5f);
+    //int32 result = (int32)(ceilf(real32Value));
+    return result;
+}
+
+
+inline static int32 CeilReal32ToInt32(real32 real32Value)
+{
+    // TODO(KARAN): roundf is too slow, replace it with something faster
+    
+    // Doing roundf for every pixel tanked the 
+    // frame rate from 30ms to 500ms.
+    
+    int32 result = (int32)(real32Value + 0.5f);
+    //int32 result = (int32)(ceilf(real32Value));
+    return result;
+}
+
+
+inline static uint32 CeilReal32ToUint32(real32 real32Value)
+{
+    // TODO(KARAN): roundf is too slow, replace it with something faster
+    
+    // Doing roundf for every pixel tanked the 
+    // frame rate from 30ms to 500ms.
+    
+    uint32 result = (uint32)(real32Value + 0.5f);
+    //int32 result = (int32)(ceilf(real32Value));
+    return result;
+}
+
+void WrapAroundIfOutOfBounds(v2 *point, v4 rect)
+{
+    if(point->x < rect.x)
+    {
+        real32 diff = rect.x - point->x;
+        point->x = (rect.x + rect.w) - diff;
+    }
+    else if(point->x >= (rect.x + rect.w))
+    {
+        real32 diff = point->x - (rect.x + rect.w);
+        point->x = rect.x + diff;
+    }
+    
+    if(point->y < rect.y)
+    {
+        real32 diff = rect.y - point->y;
+        point->y = (rect.y + rect.h) - diff;
+    }
+    else if(point->y >= (rect.y + rect.h))
+    {
+        real32 diff = point->y - (rect.y + rect.h);
+        point->y = rect.y + diff;
+    }
 }

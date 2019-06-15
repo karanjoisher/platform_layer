@@ -4,10 +4,15 @@
 #include "utility.h"
 #include "project_types.h"
 #include <GL/glx.h>
+#include <alsa/asoundlib.h>
 
-typedef XImage LinuxOffscreenBuffer;
 
+#if defined(PF_TIME)
 typedef timespec PfTimestamp;
+#endif
+
+#if defined(PF_WINDOW_AND_INPUT)
+typedef XImage LinuxOffscreenBuffer;
 
 struct PfOffscreenBuffer
 {
@@ -46,5 +51,21 @@ struct PfRect
     int32 width;
     int32 height;
 };
+#endif
+
+#if defined(PF_SOUND)
+struct PfSoundSystem
+{
+    snd_pcm_t *soundDeviceHandle;
+    void *secondarySoundBuffer;
+    uint64 bufferDurationInFrames;
+};
+
+struct PfSoundBuffer
+{
+    void *buffer;
+    uint64 frames;
+};
+#endif
 
 #include "api_interface.h"

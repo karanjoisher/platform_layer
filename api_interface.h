@@ -285,10 +285,25 @@ void PfSleep(int32 milliseconds);
 // File I/O
 #if defined(PF_FILE)
 int64 PfWriteEntireFile(char *filename, void *data, uint32 size);
-int64 PfReadEntireFile(char *filename, void *data, uint32 size);
+int64 PfReadEntireFile(char *filename, void *data); 
 int64 PfWriteFile(int64 fileHandle, void *data, uint32 size);
 int64 PfReadFile(int64 fileHandle, void *data, uint32 size);
 int64 PfCreateFile(char *filename, uint32 access, uint32 creationDisposition);
 bool PfCloseFileHandle(int64 fileHandle);
 bool PfDeleteFile(char *filename);
+bool PfFilepathExists(char *filepath); 
+uint64 PfGetFileSize(char *filepath); 
+#endif
+
+//Memory
+// TODO(KARAN): Make this function as versatile as Linux's mmap and Windows' VirtualAlloc
+void* PfVirtualAlloc(void *baseAddress, size_t size);
+
+#if defined(PF_SOUND)
+PfSoundSystem PfInitializeSoundSystem(uint64 bufferDurationInFrames, uint32 bitsPerSample, uint32 numChannels, uint32 framesPerSecond);
+uint64 PfGetPendingFrames(PfSoundSystem *soundSystem);
+PfSoundBuffer PfGetSoundBuffer(PfSoundBuffer *soundSystem, uint64 framesRequired);
+
+void PfDispatchSoundBuffer(PfSoundSystem *soundSystem, PfSoundBuffer *soundBuffer);
+void PfStartSoundSystem(PfSoundSystem *soundSystem);
 #endif

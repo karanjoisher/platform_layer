@@ -1,14 +1,6 @@
-Asteroids
+Demo
 {
-    [x] Consistent memory allocation for bullets and asteroids
-    [x] Asteroid spawning(random velocity, position and angular velocity)
-    [x] Collision detection between bullet and asteroid
-    [x] Collision detection between spaceship and asteroid
-    [] Compress the OpenGL image creation and rendering(already copy pasted the same code three times for spaceship, asteroids and bullets)
-    [] Sound System 
-    {
-        [] Preferrably on separate thread
-    }
+    [] On hot code reload, consider initializing gamestate objects by reading the game_memory_x.memory file, as currently on hot code reload we execute all the code for initialization of gamestate and throw it away as during playback we read the state from the above mentioned file.
 }
 
 API
@@ -20,6 +12,16 @@ API
     [x] Update PfglRenderWindow to use modern OpenGL
     [] Memory Management
     [] Error handling strategy
+    
+    [x] Compress the OpenGL image creation and rendering(already copy pasted the same code three times for spaceship, asteroids and bullets)
+    [*] Sound System 
+    {
+        [] Preferrably on separate thread
+    }
+    [x] Clean up application.cpp
+    [x] Organize and Clean up Gamestate memory allocation and hot code reload logic 
+    [x] Figure out how to make the sound interface.
+    [x] Fix File API
     
 }
 

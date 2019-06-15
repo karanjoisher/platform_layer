@@ -3,6 +3,10 @@
 #include <windows.h>
 #include "project_types.h"
 //#include <GL/gl.h>
+#include <Objbase.h>
+#include <Mmdeviceapi.h>
+#include <Audioclient.h>
+#include <Audiopolicy.h>
 
 #if defined(PF_TIME)
 typedef int64 PfTimestamp;
@@ -53,6 +57,23 @@ struct PfWindow
     uint32 offscreenBufferTextureId;
     int32 vao;
     uint32 programId;
+};
+#endif
+
+#if defined(PF_SOUND)
+struct PfSoundSystem
+{
+    uint64 bufferDurationInFrames;
+    IAudioRenderClient *audioRenderClient;
+    IAudioClock *audioClock;
+    IAudioClient *audioClient;
+    uint64 audioClockFrequency;
+};
+
+struct PfSoundBuffer
+{
+    void *buffer;
+    uint64 frames;
 };
 #endif
 
