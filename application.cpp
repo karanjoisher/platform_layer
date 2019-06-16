@@ -110,6 +110,7 @@ struct PlayingSound
 // NOTE(KARAN): Sorry for the bad naming
 struct PlayingSoundId
 {
+    PlayingSound *playingSound;
     uint32 playingSoundId;
     uint32 soundId;
 };
@@ -144,7 +145,7 @@ struct GameState
 
 bool IsValidPlayingSoundId(PlayingSoundId playingSoundId)
 {
-    return (playingSoundId.playingSoundId != 0);
+    return playingSoundId.playingSound;
 }
 
 PlayingSoundId PlaySound(GameState *gameState, Sound *sound, bool loop, real32 volume1, real32 volume2)
@@ -164,6 +165,7 @@ PlayingSoundId PlaySound(GameState *gameState, Sound *sound, bool loop, real32 v
     soundToPlay->next = gameState->soundsPlaying;
     gameState->soundsPlaying = soundToPlay;
     
+    result.playingSound = soundToPlay;
     result.playingSoundId = soundToPlay->id;
     result.soundId = sound->id;
     
@@ -172,7 +174,16 @@ PlayingSoundId PlaySound(GameState *gameState, Sound *sound, bool loop, real32 v
 
 PlayingSound* GetPlayingSound(GameState *gameState, PlayingSoundId playingSoundId)
 {
-    PlayingSound *result = 0;
+    PlayingSound *result = playingSoundId.playingSound;
+    if(result && result->id == playingSoundId.playingSoundId && result->sound->id == playingSoundId.soundId)
+    {
+        
+    }
+    else
+    {
+        result = 0;
+    }
+#if 0
     if(IsValidPlayingSoundId(playingSoundId))
     {
         PlayingSound *playingSound = gameState->soundsPlaying;
@@ -186,17 +197,15 @@ PlayingSound* GetPlayingSound(GameState *gameState, PlayingSoundId playingSoundI
             playingSound = playingSound->next;
         }
     }
+#endif
     return result;
 }
 
 
 void DestroySound(GameState *gameState, PlayingSoundId playingSoundId)
 {
-    if(IsValidPlayingSoundId(playingSoundId))
-    {
-        PlayingSound *soundPlaying = GetPlayingSound(gameState, playingSoundId);
-        if(soundPlaying) soundPlaying->destroyNow = true;
-    }
+    PlayingSound *soundPlaying = GetPlayingSound(gameState, playingSoundId);
+    if(soundPlaying) soundPlaying->destroyNow = true;
 }
 
 
