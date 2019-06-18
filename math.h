@@ -296,6 +296,11 @@ inline static int32 CeilReal32ToInt32(real32 real32Value)
     return result;
 }
 
+real32 Floor(real32 val)
+{
+    return floorf(val);
+}
+
 
 inline static uint32 CeilReal32ToUint32(real32 real32Value)
 {

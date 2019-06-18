@@ -22,6 +22,7 @@ typedef ptrdiff_t GLintptr;
 #endif
 
 INSERT_NEW_FUNCTION_TYPES_HERE
+typedef void APIENTRY type_glUniform2f (GLint location, GLfloat v0, GLfloat v1);
 typedef void APIENTRY type_glUniformMatrix4fv (GLint location, GLsizei count, GLboolean transpose, const GLfloat *value);
 typedef void APIENTRY type_glUniform3f (GLint location, GLfloat v0, GLfloat v1, GLfloat v2);
 typedef void APIENTRY type_glGenVertexArrays (GLsizei n, GLuint *arrays);
@@ -49,6 +50,7 @@ typedef void APIENTRY type_glUniform1i (GLint location, GLint v0);
 #define GL_FUNCTION(name) global_variable type_##name *name
 
 INSERT_NEW_FUNCTION_DECLARATIONS_HERE
+GL_FUNCTION(glUniform2f);
 GL_FUNCTION(glUniformMatrix4fv);
 GL_FUNCTION(glUniform3f);
 GL_FUNCTION(glGenVertexArrays);
@@ -82,6 +84,7 @@ GL_FUNCTION(glUniform1i);
 void GrabOpenGLFuncPointers()
 {
     INSERT_NEW_FUNCTION_GRABS_HERE;
+GL_GET_PROC_ADDRESS(glUniform2f);
 GL_GET_PROC_ADDRESS(glUniformMatrix4fv);
 GL_GET_PROC_ADDRESS(glUniform3f);
     GL_GET_PROC_ADDRESS(glGenVertexArrays);

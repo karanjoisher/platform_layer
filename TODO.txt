@@ -1,6 +1,15 @@
 Demo
 {
     [] On hot code reload, consider initializing gamestate objects by reading the game_memory_x.memory file, as currently on hot code reload we execute all the code for initialization of gamestate and throw it away as during playback we read the state from the above mentioned file.
+    [] Bug: In Spritesheet struct we store the Opengl VAO and texture Ids, and spritesheets are stored in gameStateStorage. On hot code reload we read the gameStateStorage off the disk which restores old OpenGL texture and VAO ids for the spritesheets. However there is no guarantee that OpenGL will provide us the same texture and VAO ids when we genTex/genBuff on hot code reload which can crash the program. 
+    [] UI
+    {
+        [] Start game button
+        [] Highscorers list..??
+        [] Render Score and Lives remaining
+    }
+    [] Shorten the explosion sound
+    [] Temporary storage functionality for loading shader strings
 }
 
 API

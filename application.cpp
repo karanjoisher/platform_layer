@@ -116,12 +116,50 @@ struct PlayingSoundId
 };
 
 
+struct TextureInfo 
+{
+    uint32 textureId;
+    int32 width;
+    int32 height;
+    int32 numChannels;
+};
+
+struct Spritesheet
+{
+    TextureInfo textureInfo;
+    int32 numFramesAlongWidth;
+    int32 numFramesAlongHeight;
+    int32 numFrames;
+    real32 frameWidth;
+    real32 frameHeight;
+    real32 normalizedFrameWidth;
+    real32 normalizedFrameHeight;
+    uint32 vao;
+};
+
+struct AnimationClip
+{
+    Spritesheet *spritesheet;
+    v3 pos;
+    real32 msPerFrame;
+    real32 timeSpentOnThisFrame;
+    int32 startFrameIndex;
+    int32 onePastEndFrameIndex;
+    int32 currentFrameIndex;
+    int32 stride;
+    AnimationClip *next;
+};
+
+
 struct GameState
 {
     v2 spaceshipDim;
     v3 spaceshipPos;
     v3 spaceshipVel;
     real32 spaceshipRotation;
+    
+    v3 debrisPos;
+    v3 debrisVel;
     
     ChunkAllocator bulletAllocator;
     Bullet *bullets;
@@ -134,6 +172,10 @@ struct GameState
     uint32 playingSoundNextId;
     PlayingSound *soundsPlaying;
     
+    
+    ChunkAllocator animationClipsAllocator;
+    AnimationClip *animationClips;
+    
     real32 spaceshipRadius;
     real32 bulletRadius;
     real32 asteroidRadius;
@@ -142,6 +184,24 @@ struct GameState
     int32 recordSlot;
     int32 totalSlots;
 };
+
+
+void PlayAnimation(GameState *gameState, Spritesheet *spritesheet, v3 pos, real32 msPerFrame, int32 startFrameIndex, int32 onePastEndFrameIndex, int32 stride)
+{
+    AnimationClip *clip = (AnimationClip *)AllocateChunk(&gameState->animationClipsAllocator);
+    clip->spritesheet = spritesheet;
+    clip->pos = pos;
+    clip->msPerFrame = msPerFrame;
+    clip->timeSpentOnThisFrame = 0.0f;
+    clip->startFrameIndex = startFrameIndex;
+    clip->onePastEndFrameIndex = onePastEndFrameIndex;
+    clip->currentFrameIndex = startFrameIndex;
+    clip->stride = stride;
+    
+    clip->next = gameState->animationClips;
+    gameState->animationClips = clip;
+}
+
 
 bool IsValidPlayingSoundId(PlayingSoundId playingSoundId)
 {
@@ -224,15 +284,7 @@ struct HotCodeRelaunchPersistentData
     int32 playBackSlot;
 };
 
-struct TextureInfo 
-{
-    uint32 textureId;
-    int32 width;
-    int32 height;
-    int32 numChannels;
-};
-
-TextureInfo OpenGLGenTexture(char *imagePath)
+TextureInfo OpenGLGenTexture(char *imagePath, GLuint wrapping = GL_CLAMP_TO_BORDER)
 {
     // NOTE(KARAN): Only supports RGBA8
     TextureInfo result = {};
@@ -240,7 +292,7 @@ TextureInfo OpenGLGenTexture(char *imagePath)
     stbi_set_flip_vertically_on_load(true);
     int imageWidth, imageHeight, imageChannels;
     unsigned char *imageData = stbi_load(imagePath, &imageWidth, &imageHeight, &imageChannels, 4);
-    ASSERT(imageChannels == 4, "Only supports RGBA textures");
+    //ASSERT(imageChannels == 4, "Only supports RGBA textures");
     ASSERT(imageData, "Couldn't load image");
     
     uint32 textureId;
@@ -252,8 +304,8 @@ TextureInfo OpenGLGenTexture(char *imagePath)
     
     GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
     GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
-    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER));
-    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapping));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapping));
     //GLfloat debugColor[] = {1.0f, 0.0f, 1.0f, 1.0f};
     //GL_CALL(glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, debugColor));
     GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
@@ -267,7 +319,7 @@ TextureInfo OpenGLGenTexture(char *imagePath)
     return result;
 }
 
-uint32 OpenGLGenVAOForQuadrilateralCenteredAtOrigin(int32 width, int32 height)
+uint32 OpenGLGenVAOForQuadrilateralCenteredAtOrigin(int32 width, int32 height, v2 textureOrigin = {0.0f, 0.0f}, v2 textureDim = {1.0f, 1.0f})
 {
     uint32 result = 0;
     
@@ -277,10 +329,10 @@ uint32 OpenGLGenVAOForQuadrilateralCenteredAtOrigin(int32 width, int32 height)
     real32 vertices[] = 
     {
         // positions          // texture coords
-        max.x, max.y, 0.0f,   1.0f, 1.0f, // top right
-        max.x, min.y, 0.0f,   1.0f, 0.0f, // bottom right
-        min.x, min.y, 0.0f,   0.0f, 0.0f, // bottom left
-        min.x, max.y, 0.0f,   0.0f, 1.0f  // top left 
+        max.x, max.y, 0.0f,   (textureOrigin.x + textureDim.x), (textureOrigin.y + textureDim.y), // top right
+        max.x, min.y, 0.0f,   (textureOrigin.x + textureDim.x), textureOrigin.y, // bottom right
+        min.x, min.y, 0.0f,   textureOrigin.x, textureOrigin.y, // bottom left
+        min.x, max.y, 0.0f,   textureOrigin.x, (textureOrigin.y + textureDim.y)  // top left 
     };
     
     uint32 quadIndices[] = 
@@ -353,10 +405,24 @@ uint32 OpenGLGenProgramId(char *vertexShaderSource, char *fragmentShaderSource)
 }
 
 
+void CreateSpritesheet(char *imagePath, Spritesheet *spritesheet, int32 numFramesAlongWidth, int32 numFramesAlongHeight)
+{
+    spritesheet->textureInfo = OpenGLGenTexture(imagePath);
+    spritesheet->numFramesAlongWidth = numFramesAlongWidth;
+    spritesheet->numFramesAlongHeight = numFramesAlongHeight;
+    spritesheet->numFrames = spritesheet->numFramesAlongWidth * spritesheet->numFramesAlongHeight;
+    spritesheet->frameWidth = (real32)spritesheet->textureInfo.width/(real32)spritesheet->numFramesAlongWidth;
+    spritesheet->frameHeight = (real32)spritesheet->textureInfo.height/(real32)spritesheet->numFramesAlongHeight;
+    spritesheet->normalizedFrameWidth = spritesheet->frameWidth/(real32)spritesheet->textureInfo.width;
+    spritesheet->normalizedFrameHeight = spritesheet->frameHeight/(real32)spritesheet->textureInfo.height;
+    spritesheet->vao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin((int32)spritesheet->frameWidth, (int32)spritesheet->frameHeight, {0.0f, 0.0f}, {spritesheet->normalizedFrameWidth, spritesheet->normalizedFrameHeight});
+}
+
+
 
 int main(int argc, char **argv)
 {
-    real32 fps = 60.0f;
+    real32 fps = 30.0f;
     real32 targetMillisecondsPerFrame = (1000.0f/fps);
     real32 dT = 1.0f/fps;
     
@@ -364,11 +430,12 @@ int main(int argc, char **argv)
     PfGLConfig(4, 3, true);
     
     PfWindow window[1] = {};
-    PfCreateWindow(&window[0], (char*)"WINDOW 0", 0, 0, 800, 800);
+    PfCreateWindow(&window[0], (char*)"WINDOW 0", 0, 0, 800, 600);
     PfRect clientRect = PfGetClientRect(&window[0]);
     
     int32 playBackSlot = 0;
     bool playingRestart = false;
+    bool hotCodeReloaded = false;
     
     Memory gameStateStorage = {};
     Memory assetStorage = {};
@@ -379,6 +446,7 @@ int main(int argc, char **argv)
         PfReadEntireFile("hot_code_relaunch_persistent_data", (void *)&hcrData);
         playBackSlot = hcrData.playBackSlot;
         playingRestart = true;
+        hotCodeReloaded = true;
     }
 #endif
     gameStateStorage.size = MEGABYTES((uint64)512);
@@ -404,6 +472,7 @@ int main(int argc, char **argv)
     uint64 requestedBufferFrames = CeilReal32ToUint64(bufferDurationInMS * ((real32)soundFramesPerSecond/1000.0f));
     //
     GameState *gameState = 0;
+    
     gameState = PushStruct(&gameStateStorage, GameState);
     
     gameState->bulletAllocator.length = 20;
@@ -440,6 +509,11 @@ int main(int argc, char **argv)
     gameState->playingSoundAllocator.base = (uint8 *)PushArray(&gameStateStorage, PlayingSound, gameState->playingSoundAllocator.length);
     InitializeChunkAllocator(&(gameState->playingSoundAllocator));
     
+    gameState->animationClipsAllocator.length = 15;
+    gameState->animationClipsAllocator.chunkSize = sizeof(AnimationClip);
+    gameState->animationClipsAllocator.base = (uint8 *)PushArray(&gameStateStorage, AnimationClip, gameState->animationClipsAllocator.length);
+    InitializeChunkAllocator(&(gameState->animationClipsAllocator));
+    
     Sound* backgroundSound = 0;
     Sound* pewSound = 0;
     Sound* thrustSound = 0;
@@ -472,7 +546,9 @@ int main(int argc, char **argv)
     int64 inputFileHandle = -1;
     
     gameState->spaceshipPos = {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f};
+    gameState->debrisPos = {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f};
     gameState->spaceshipVel = {};
+    gameState->debrisVel = {10.0f, 0.0f, 0.0f};
     gameState->spaceshipRotation = 0.0f;
     gameState->bulletRadius = 3.0f;
     gameState->spaceshipRadius = 35.0f;
@@ -485,23 +561,39 @@ int main(int argc, char **argv)
 #if 1
     PfglMakeCurrent(&window[0]);
     
-    TextureInfo spaceshipTextureInfo = OpenGLGenTexture("../data/images/spaceship.png");
+    TextureInfo spaceshipTextureInfo = OpenGLGenTexture("../data/images/double_ship.png");
+    TextureInfo nebulaTextureInfo = OpenGLGenTexture("../data/images/nebula_brown.png");
+    TextureInfo debrisTextureInfo = OpenGLGenTexture("../data/images/debris_blend.png", GL_REPEAT);
     TextureInfo bulletTextureInfo = OpenGLGenTexture("../data/images/shot1.png");
     TextureInfo asteroidTextureInfo = OpenGLGenTexture("../data/images/asteroid_blend.png");
     
-    gameState->spaceshipDim = {(real32)spaceshipTextureInfo.width, (real32)spaceshipTextureInfo.height};
+    gameState->spaceshipDim = {(real32)spaceshipTextureInfo.width/2.0f, (real32)spaceshipTextureInfo.height};
     
-    uint32 spaceshipVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin(spaceshipTextureInfo.width, spaceshipTextureInfo.height);
+    uint32 spaceshipVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin((int32)gameState->spaceshipDim.x, (int32)gameState->spaceshipDim.y, {0.0f, 0.0f}, {0.5f, 1.0f});
     uint32 bulletVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin(bulletTextureInfo.width, bulletTextureInfo.height);
     uint32 asteroidVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin(asteroidTextureInfo.width, asteroidTextureInfo.height);
+    uint32 nebulaVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin(nebulaTextureInfo.width, nebulaTextureInfo.height);
+    uint32 debrisVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin(nebulaTextureInfo.width * 2, nebulaTextureInfo.height, {0.0f, 0.0f}, {2.0f, 1.0f});
     
-    char *vertexShaderSource = 
-        "#version 430 core\nlayout (location = 0) in vec3 aPos;\nlayout (location = 1) in vec2 aTexCoord;\nout vec3 ourColor;\nout vec2 TexCoord;\nuniform mat4 orthoProjection;\nuniform mat4 translationMat;\nuniform mat4 rotationMatAboutZAxis;\nvoid main(){gl_Position =  orthoProjection * translationMat * rotationMatAboutZAxis * vec4(aPos, 1.0f);ourColor = vec3(1.0f, 0.0f, 0.0f);TexCoord = vec2(aTexCoord.x, aTexCoord.y);}";
+    uint32 vertexShaderFileSize = (uint32)PfGetFileSize("../basic_vertex_shader.shader");
+    uint32 fragmentShaderFileSize = (uint32)PfGetFileSize("../basic_fragment_shader.shader");
     
-    char *fragmentShaderSource = 
-        "#version 430 core\nout vec4 FragColor;in vec3 ourColor;in vec2 TexCoord;uniform sampler2D texture1;void main(){FragColor = texture(texture1, TexCoord);}";
+    char *vertexShaderSource = (char*)PushSize(&gameStateStorage, vertexShaderFileSize + 1);
+    char *fragmentShaderSource = (char*)PushSize(&gameStateStorage, fragmentShaderFileSize + 1);
+    PfReadEntireFile("../basic_vertex_shader.shader", vertexShaderSource);
+    vertexShaderSource[vertexShaderFileSize] = 0;
+    PfReadEntireFile("../basic_fragment_shader.shader", fragmentShaderSource);
+    fragmentShaderSource[fragmentShaderFileSize] = 0;
     
     uint32 programId = OpenGLGenProgramId(vertexShaderSource, fragmentShaderSource);
+    
+    // Sprite animation
+    
+    Spritesheet *explosionSpritesheet = PushStruct(&gameStateStorage, Spritesheet);
+    CreateSpritesheet("../data/images/explosion_orange.png", explosionSpritesheet, 24, 1);
+    
+    Spritesheet *explosionSpritesheet2 = PushStruct(&gameStateStorage, Spritesheet);
+    CreateSpritesheet("../data/images/explosion_alpha.png", explosionSpritesheet2, 24, 1);
 #endif
     
     PfRequestSwapInterval(1);
@@ -521,7 +613,7 @@ int main(int argc, char **argv)
             break;
         }
 #if 1
-        clientRect = PfGetClientRect(&window[0]);
+        //clientRect = PfGetClientRect(&window[0]);
         
 #if INPUT_RECORDING_PLAYBACK
         if(!recording && PfGetKeyState(&window[0], PF_LEFT_CTRL) && (PfGetKeyState(&window[0], PF_LEFT_SHIFT) == false) && PfGetKeyState(&window[0], PF_R))
@@ -660,8 +752,8 @@ int main(int argc, char **argv)
         PfTimestamp s1 = PfGetTimestamp();
         real32 t0 = PfGetSeconds(s0, s1);
         
-        if(input.left) gameState->spaceshipRotation += 2.0f; 
-        if(input.right) gameState->spaceshipRotation -= 2.0f;
+        if(input.left) gameState->spaceshipRotation += 5.0f; 
+        if(input.right) gameState->spaceshipRotation -= 5.0f;
         
         v3 forward = v3{Cosine(gameState->spaceshipRotation * DEG_TO_RAD), Sine(gameState->spaceshipRotation * DEG_TO_RAD), 0.0f};
         v3 accelaration = {};
@@ -689,6 +781,9 @@ int main(int argc, char **argv)
         gameState->spaceshipPos = gameState->spaceshipPos + displacement;
         gameState->spaceshipVel = gameState->spaceshipVel + (accelaration * dT);
         WrapAroundIfOutOfBounds((v2*)(&(gameState->spaceshipPos)), {0.0f, 0.0f, (real32)clientRect.width, (real32)clientRect.height});
+        
+        gameState->debrisPos = gameState->debrisPos + gameState->debrisVel*dT;
+        WrapAroundIfOutOfBounds((v2*)(&(gameState->debrisPos)), {0.0f, 0.0f, (real32)clientRect.width, (real32)clientRect.height});
         
         gameState->firingCoolDown -= dT;
         if(gameState->firingCoolDown <= 0.0f) 
@@ -759,6 +854,7 @@ int main(int argc, char **argv)
         
         Bullet *previousBullet = 0;
         bullet = gameState->bullets;
+        
         while(bullet)
         {
             v2 bulletPos = {bullet->pos.x, bullet->pos.y};
@@ -772,6 +868,7 @@ int main(int argc, char **argv)
                 if(collidedWithBullet)
                 {
                     deleteThisBullet = true;
+                    v3 explosionPos = asteroid->pos;
                     if(previousAsteroid)
                     {
                         previousAsteroid->next = asteroid->next;
@@ -785,6 +882,7 @@ int main(int argc, char **argv)
                     asteroid = next;
                     
                     PlaySound(gameState, boomSound, false, 0.2f, 0.2f);
+                    PlayAnimation(gameState, explosionSpritesheet, explosionPos, 16.0f, 0, 24, 1);
                 }
                 else
                 {
@@ -823,6 +921,9 @@ int main(int argc, char **argv)
             bool collidedWithSpaceship = CircleWithCircleCollisionTest(spaceshipPos, gameState->spaceshipRadius, asteroidPos, gameState->asteroidRadius);
             if(collidedWithSpaceship)
             {
+                v3 explosion1Pos = asteroid->pos;
+                v3 explosion2Pos = gameState->spaceshipPos;
+                
                 if(previousAsteroid)
                 {
                     previousAsteroid->next = asteroid->next;
@@ -836,6 +937,8 @@ int main(int argc, char **argv)
                 asteroid = next;
                 
                 PlaySound(gameState, boomSound, false, 0.2f, 0.2f);
+                PlayAnimation(gameState, explosionSpritesheet, explosion1Pos, 16.0f, 0, 24, 1);
+                PlayAnimation(gameState, explosionSpritesheet2, explosion2Pos, 16.0f, 0, 24, 1);
             }
             else
             {
@@ -846,9 +949,8 @@ int main(int argc, char **argv)
         PfTimestamp s2 = PfGetTimestamp();
         real32 t1 = PfGetSeconds(s1, s2);
 #endif
-        // Draw spaceship
         PfglMakeCurrent(&window[0]);
-        GL_CALL(glClearColor(0.0f, 0.0f, 0.0f, 1.0f));
+        GL_CALL(glClearColor(1.0f, 0.0f, 0.0f, 1.0f));
         GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
         
 #if 1
@@ -856,23 +958,20 @@ int main(int argc, char **argv)
         GL_CALL(glEnable(GL_BLEND));
         GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
         
+        // Draw nebula
         GL_CALL(glActiveTexture(GL_TEXTURE0));
-        GL_CALL(glBindTexture(GL_TEXTURE_2D, spaceshipTextureInfo.textureId));
-        GL_CALL(glBindVertexArray(spaceshipVao));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, nebulaTextureInfo.textureId));
+        GL_CALL(glBindVertexArray(nebulaVao));
         GL_CALL(glUseProgram(programId));
+        
         GL_CALL(GLint samplerUniformLocation = glGetUniformLocation(programId, "texture1"));
+        GL_CALL(GLint textureOffset = glGetUniformLocation(programId, "textureOffset"));
         GL_CALL(GLint rotationMatAboutZAxisUniformLocation = glGetUniformLocation(programId, "rotationMatAboutZAxis"));
         GL_CALL(GLint translationMatUniformLocation = glGetUniformLocation(programId, "translationMat"));
         GL_CALL(GLint orthoProjectionUniformLocation = glGetUniformLocation(programId, "orthoProjection"));
         
-        GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
-        
-        mat4 rotationMatAboutZAxis = {};
-        RotationAboutZAxis(&rotationMatAboutZAxis, gameState->spaceshipRotation);
-        
         mat4 translationMat = {};
-        TranslationMat(&translationMat, gameState->spaceshipPos);
-        
+        mat4 rotationMatAboutZAxis = {};
         mat4 orthoProjection = {};
         orthoProjection.data[0] = 2.0f/(real32)clientRect.width;
         orthoProjection.data[3] = -1.0f;
@@ -881,8 +980,49 @@ int main(int argc, char **argv)
         orthoProjection.data[10] = 1.0f;
         orthoProjection.data[15] = 1.0f;
         
+        Identity(&rotationMatAboutZAxis);
+        TranslationMat(&translationMat, {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f});
         GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
         GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
+        GL_CALL(glUniform2f(textureOffset, 0.0f, 0.0f)); 
+        GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
+        GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
+        GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
+        
+        // Draw debris
+        GL_CALL(glActiveTexture(GL_TEXTURE0));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, debrisTextureInfo.textureId));
+        GL_CALL(glBindVertexArray(debrisVao));
+        Identity(&rotationMatAboutZAxis);
+        TranslationMat(&translationMat, gameState->debrisPos);
+        
+        GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
+        GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
+        GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
+        GL_CALL(glUniform2f(textureOffset, 0.0f, 0.0f)); 
+        GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
+        GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
+        
+        // Draw spaceship
+        GL_CALL(glActiveTexture(GL_TEXTURE0));
+        GL_CALL(glBindTexture(GL_TEXTURE_2D, spaceshipTextureInfo.textureId));
+        GL_CALL(glBindVertexArray(spaceshipVao));
+        GL_CALL(glUseProgram(programId));
+        
+        RotationAboutZAxis(&rotationMatAboutZAxis, gameState->spaceshipRotation);
+        TranslationMat(&translationMat, gameState->spaceshipPos);
+        
+        GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
+        GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
+        GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
+        if(input.throttle)
+        {
+            GL_CALL(glUniform2f(textureOffset, 0.5f, 0.0f)); 
+        }
+        else
+        {
+            GL_CALL(glUniform2f(textureOffset, 0.0f, 0.0f)); 
+        }
         GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
         GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
         
@@ -899,6 +1039,8 @@ int main(int argc, char **argv)
             TranslationMat(&translationMat, bullet->pos);
             GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
             GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
+            GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
+            GL_CALL(glUniform2f(textureOffset, 0.0f, 0.0f)); 
             GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
             GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
             bullet = bullet->next;
@@ -908,6 +1050,7 @@ int main(int argc, char **argv)
         GL_CALL(glActiveTexture(GL_TEXTURE0));
         GL_CALL(glBindTexture(GL_TEXTURE_2D, asteroidTextureInfo.textureId));
         GL_CALL(glBindVertexArray(asteroidVao));
+        GL_CALL(glUseProgram(programId));
         
         asteroid = gameState->asteroids;
         while(asteroid)
@@ -916,10 +1059,64 @@ int main(int argc, char **argv)
             TranslationMat(&translationMat, asteroid->pos);
             GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
             GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
+            GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
+            GL_CALL(glUniform2f(textureOffset, 0.0f, 0.0f)); 
             GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
             GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
             asteroid = asteroid->next;
         }
+        
+        
+        // Draw animations
+        AnimationClip *previousClip = 0;
+        AnimationClip *currentClip = gameState->animationClips;
+        while(currentClip)
+        {
+            AnimationClip *nextClip = currentClip->next;
+            currentClip->timeSpentOnThisFrame += targetMillisecondsPerFrame;
+            if(currentClip->timeSpentOnThisFrame >= currentClip->msPerFrame)
+            {
+                currentClip->timeSpentOnThisFrame -= currentClip->msPerFrame;
+                currentClip->currentFrameIndex = currentClip->currentFrameIndex + currentClip->stride;
+            }
+            
+            if(currentClip->currentFrameIndex == currentClip->onePastEndFrameIndex) 
+            {
+                // Delete clip
+                if(previousClip)
+                {
+                    previousClip->next = nextClip;
+                }
+                else
+                {
+                    gameState->animationClips = nextClip;
+                }
+                FreeChunk(&gameState->animationClipsAllocator, (uint8*)currentClip);
+            }
+            else
+            {
+                real32 row = Floor((real32)currentClip->currentFrameIndex/(real32)currentClip->spritesheet->numFramesAlongWidth);
+                real32 column = (real32)currentClip->currentFrameIndex - (row * (real32)currentClip->spritesheet->numFramesAlongWidth);
+                v2 textureOffset_ = {column*currentClip->spritesheet->normalizedFrameWidth, row*currentClip->spritesheet->normalizedFrameHeight};
+                
+                GL_CALL(glActiveTexture(GL_TEXTURE0));
+                GL_CALL(glBindTexture(GL_TEXTURE_2D, currentClip->spritesheet->textureInfo.textureId));
+                GL_CALL(glBindVertexArray(currentClip->spritesheet->vao));
+                GL_CALL(glUseProgram(programId));
+                
+                Identity(&rotationMatAboutZAxis);
+                TranslationMat(&translationMat, currentClip->pos);
+                GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
+                GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
+                GL_CALL(glUniform2f(textureOffset, textureOffset_.x, textureOffset_.y)); 
+                GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
+                GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
+                GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
+            }
+            
+            currentClip = nextClip;
+        }
+        
         
         // Unbind stuff
         GL_CALL(glUseProgram(0));
@@ -929,6 +1126,7 @@ int main(int argc, char **argv)
         {
             glDisable(GL_BLEND);
         }
+        
 #endif
         PfTimestamp s3 = PfGetTimestamp();
         real32 t2 = PfGetSeconds(s2, s3);
