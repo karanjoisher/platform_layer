@@ -1,4 +1,5 @@
 #include "project_types.h"
+#include <stdlib.h>
 #include <math.h>
 #define PI 3.14159265358979323846f
 #define DEG_TO_RAD (PI/180.0f)
@@ -25,6 +26,20 @@ struct v4
     real32 w;
     real32 h;
 };
+
+struct v2i32
+{
+    int32 x;
+    int32 y;
+};
+
+
+struct v2u32
+{
+    uint32 x;
+    uint32 y;
+};
+
 #pragma pack(pop)
 
 struct mat4
@@ -93,6 +108,24 @@ v2& operator*=(v2 &a, real32 b)
 }
 
 
+v2 operator/(v2 a, real32 b)
+{
+    v2 result;
+    result.x = a.x/b;
+    result.y = a.y/b;
+    
+    return result;
+}
+
+
+v2& operator/=(v2 &a, real32 b)
+{
+    a = a/b;
+    return a;
+}
+
+
+
 v2& operator+=(v2 &a, v2 b)
 {
     a = a + b;
@@ -157,6 +190,25 @@ v3& operator*=(v3 &a, real32 b)
 }
 
 
+v3 operator/(v3 a, real32 b)
+{
+    v3 result;
+    result.x = a.x / b;
+    result.y = a.y / b;
+    result.z = a.z / b;
+    
+    return result;
+}
+
+
+v3& operator/=(v3 &a, real32 b)
+{
+    a = a / b;
+    return a;
+}
+
+
+
 v3& operator+=(v3 &a, v3 b)
 {
     a = a + b;
@@ -204,6 +256,29 @@ real32 Magnitude(v2 v)
     real32 result;
     result = SquareRoot(SquaredMagnitude(v));
     return result;
+}
+
+v2 Normalize(v2 v)
+{
+    v2 result = {};
+    real32 mag = Magnitude(v);
+    result = v/mag;
+    return result;
+}
+
+
+v3 Normalize(v3 v)
+{
+    v3 result = {};
+    real32 mag = Magnitude(v);
+    result = v/mag;
+    return result;
+}
+
+
+real32 Rand(int32 min, int32 max)
+{
+    return (real32)(min + rand() % (max - min));
 }
 
 void RotationAboutZAxis(mat4 *mat, real32 degrees)
@@ -337,4 +412,32 @@ void WrapAroundIfOutOfBounds(v2 *point, v4 rect)
         real32 diff = point->y - (rect.y + rect.h);
         point->y = rect.y + diff;
     }
+}
+
+bool IsPointInRect(v4 rect, v2 point)
+{
+    bool result;
+    real32 minX = rect.x;
+    real32 minY = rect.y;
+    real32 maxX = minX + rect.w - 1.0f;
+    real32 maxY = minY + rect.h - 1.0f;
+    
+    result = ((point.x >= minX) && (point.x <= maxX) &&
+              (point.y >= minY) && (point.y <= maxY));
+    
+    return result;
+}
+
+inline int32
+RoundReal32ToInt32(real32 Real32)
+{
+    int32 Result = (int32)roundf(Real32);
+    return(Result);
+}
+
+inline uint32
+RoundReal32ToUint32(real32 Real32)
+{
+    uint32 Result = (uint32)roundf(Real32);
+    return(Result);
 }

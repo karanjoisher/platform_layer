@@ -362,6 +362,69 @@ uint32 OpenGLGenVAOForQuadrilateralCenteredAtOrigin(int32 width, int32 height, v
 }
 
 
+void OpenGLSetUniform2f(char *uniformName, v2 val, uint32 programId)
+{
+    GL_CALL(GLint uniformLocation = glGetUniformLocation(programId, uniformName));
+    GL_CALL(glUniform2f(uniformLocation, val.x, val.y)); 
+}
+
+
+void OpenGLSetUniform4f(char *uniformName, v4 val, uint32 programId)
+{
+    GL_CALL(GLint uniformLocation = glGetUniformLocation(programId, uniformName));
+    GL_CALL(glUniform4f(uniformLocation, val.x, val.y, val.w, val.h)); 
+}
+
+void OpenGLSetUniform1i(char *uniformName, int32 val, uint32 programId)
+{
+    GL_CALL(GLint uniformLocation = glGetUniformLocation(programId, uniformName));
+    GL_CALL(glUniform1i(uniformLocation, val)); 
+}
+
+
+void OpenGLSetUniform4fv(char *uniformName, real32 *val, uint32 programId)
+{
+    GL_CALL(GLint uniformLocation = glGetUniformLocation(programId, uniformName));
+    GL_CALL(glUniformMatrix4fv(uniformLocation, 1, GL_TRUE, val)); 
+}
+
+struct ShaderInputs
+{
+    uint32 textureId;
+    uint32 vao;
+    uint32 programId;
+    int32 sampler;
+    v2 textureOffset;
+    mat4 rotationMatAboutZAxis;
+    mat4 translationMat;
+    mat4 orthoProjection;
+};
+
+
+void OpenGLSetShaderUniforms(ShaderInputs *input)
+{
+    OpenGLSetUniform4fv("rotationMatAboutZAxis", input->rotationMatAboutZAxis.data, input->programId); 
+    OpenGLSetUniform4fv("translationMat", input->translationMat.data, input->programId);
+    OpenGLSetUniform4fv("orthoProjection", input->orthoProjection.data, input->programId); 
+    OpenGLSetUniform2f("textureOffset", input->textureOffset, input->programId);
+    OpenGLSetUniform1i("texture1", input->sampler, input->programId);
+}
+
+void OpenGLBind_Texture_VAO_Program(ShaderInputs *shaderInputs)
+{
+    GL_CALL(glActiveTexture(GL_TEXTURE0 + shaderInputs->sampler));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, shaderInputs->textureId));
+    GL_CALL(glBindVertexArray(shaderInputs->vao));
+    GL_CALL(glUseProgram(shaderInputs->programId));
+}
+
+void OpenGLUnbind_Texture_VAO_Program()
+{
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+    GL_CALL(glBindVertexArray(0));
+    GL_CALL(glUseProgram(0));
+}
+
 uint32 OpenGLGenProgramId(char *vertexShaderSource, char *fragmentShaderSource)
 {
     uint32 result = 0;
@@ -959,113 +1022,82 @@ int main(int argc, char **argv)
         GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
         
         // Draw nebula
-        GL_CALL(glActiveTexture(GL_TEXTURE0));
-        GL_CALL(glBindTexture(GL_TEXTURE_2D, nebulaTextureInfo.textureId));
-        GL_CALL(glBindVertexArray(nebulaVao));
-        GL_CALL(glUseProgram(programId));
+        ShaderInputs shaderInputs = {};
+        shaderInputs.textureId = nebulaTextureInfo.textureId;
+        shaderInputs.vao = nebulaVao;
+        shaderInputs.programId = programId;
+        shaderInputs.orthoProjection.data[0] = 2.0f/(real32)clientRect.width;
+        shaderInputs.orthoProjection.data[3] = -1.0f;
+        shaderInputs.orthoProjection.data[5] = 2.0f/(real32)clientRect.height;
+        shaderInputs.orthoProjection.data[7] = -1.0f;
+        shaderInputs.orthoProjection.data[10] = 1.0f;
+        shaderInputs.orthoProjection.data[15] = 1.0f;
+        Identity(&(shaderInputs.rotationMatAboutZAxis));
+        TranslationMat(&(shaderInputs.translationMat), {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f});
         
-        GL_CALL(GLint samplerUniformLocation = glGetUniformLocation(programId, "texture1"));
-        GL_CALL(GLint textureOffset = glGetUniformLocation(programId, "textureOffset"));
-        GL_CALL(GLint rotationMatAboutZAxisUniformLocation = glGetUniformLocation(programId, "rotationMatAboutZAxis"));
-        GL_CALL(GLint translationMatUniformLocation = glGetUniformLocation(programId, "translationMat"));
-        GL_CALL(GLint orthoProjectionUniformLocation = glGetUniformLocation(programId, "orthoProjection"));
-        
-        mat4 translationMat = {};
-        mat4 rotationMatAboutZAxis = {};
-        mat4 orthoProjection = {};
-        orthoProjection.data[0] = 2.0f/(real32)clientRect.width;
-        orthoProjection.data[3] = -1.0f;
-        orthoProjection.data[5] = 2.0f/(real32)clientRect.height;
-        orthoProjection.data[7] = -1.0f;
-        orthoProjection.data[10] = 1.0f;
-        orthoProjection.data[15] = 1.0f;
-        
-        Identity(&rotationMatAboutZAxis);
-        TranslationMat(&translationMat, {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f});
-        GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
-        GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
-        GL_CALL(glUniform2f(textureOffset, 0.0f, 0.0f)); 
-        GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
-        GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
+        OpenGLBind_Texture_VAO_Program(&shaderInputs);
+        OpenGLSetShaderUniforms(&shaderInputs);
         GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
         
         // Draw debris
-        GL_CALL(glActiveTexture(GL_TEXTURE0));
-        GL_CALL(glBindTexture(GL_TEXTURE_2D, debrisTextureInfo.textureId));
-        GL_CALL(glBindVertexArray(debrisVao));
-        Identity(&rotationMatAboutZAxis);
-        TranslationMat(&translationMat, gameState->debrisPos);
+        shaderInputs.textureId = debrisTextureInfo.textureId;
+        shaderInputs.vao = debrisVao;
+        Identity(&(shaderInputs.rotationMatAboutZAxis));
+        TranslationMat(&(shaderInputs.translationMat), gameState->debrisPos);
         
-        GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
-        GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
-        GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
-        GL_CALL(glUniform2f(textureOffset, 0.0f, 0.0f)); 
-        GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
+        OpenGLBind_Texture_VAO_Program(&shaderInputs);
+        OpenGLSetShaderUniforms(&shaderInputs);
         GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
         
         // Draw spaceship
-        GL_CALL(glActiveTexture(GL_TEXTURE0));
-        GL_CALL(glBindTexture(GL_TEXTURE_2D, spaceshipTextureInfo.textureId));
-        GL_CALL(glBindVertexArray(spaceshipVao));
-        GL_CALL(glUseProgram(programId));
-        
-        RotationAboutZAxis(&rotationMatAboutZAxis, gameState->spaceshipRotation);
-        TranslationMat(&translationMat, gameState->spaceshipPos);
-        
-        GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
-        GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
-        GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
+        shaderInputs.textureId = spaceshipTextureInfo.textureId;
+        shaderInputs.vao = spaceshipVao;
+        RotationAboutZAxis(&(shaderInputs.rotationMatAboutZAxis), gameState->spaceshipRotation);
+        TranslationMat(&(shaderInputs.translationMat), gameState->spaceshipPos);
         if(input.throttle)
         {
-            GL_CALL(glUniform2f(textureOffset, 0.5f, 0.0f)); 
+            shaderInputs.textureOffset = {0.5f, 0.0f};
         }
         else
         {
-            GL_CALL(glUniform2f(textureOffset, 0.0f, 0.0f)); 
+            shaderInputs.textureOffset = {0.0f, 0.0f};
         }
-        GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
+        OpenGLBind_Texture_VAO_Program(&shaderInputs);
+        OpenGLSetShaderUniforms(&shaderInputs);
         GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
         
-        // Draw bullet
-        GL_CALL(glActiveTexture(GL_TEXTURE0));
-        GL_CALL(glBindTexture(GL_TEXTURE_2D, bulletTextureInfo.textureId));
-        GL_CALL(glBindVertexArray(bulletVao));
+        // Draw bullets
+        shaderInputs.textureId = bulletTextureInfo.textureId;
+        shaderInputs.vao = bulletVao;
+        shaderInputs.textureOffset = {};
+        Identity(&(shaderInputs.rotationMatAboutZAxis));
         
-        Identity(&rotationMatAboutZAxis);
-        
+        OpenGLBind_Texture_VAO_Program(&shaderInputs);
         bullet = gameState->bullets;
         while(bullet)
         {
-            TranslationMat(&translationMat, bullet->pos);
-            GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
-            GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
-            GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
-            GL_CALL(glUniform2f(textureOffset, 0.0f, 0.0f)); 
-            GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
+            TranslationMat(&(shaderInputs.translationMat), bullet->pos);
+            
+            OpenGLSetShaderUniforms(&shaderInputs);
             GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
             bullet = bullet->next;
         }
         
-        // Draw asteroid
-        GL_CALL(glActiveTexture(GL_TEXTURE0));
-        GL_CALL(glBindTexture(GL_TEXTURE_2D, asteroidTextureInfo.textureId));
-        GL_CALL(glBindVertexArray(asteroidVao));
-        GL_CALL(glUseProgram(programId));
+        // Draw asteroids
+        shaderInputs.textureId = asteroidTextureInfo.textureId;
+        shaderInputs.vao = asteroidVao;
+        
+        OpenGLBind_Texture_VAO_Program(&shaderInputs);
         
         asteroid = gameState->asteroids;
         while(asteroid)
         {
-            RotationAboutZAxis(&rotationMatAboutZAxis, asteroid->rotation);
-            TranslationMat(&translationMat, asteroid->pos);
-            GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
-            GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
-            GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
-            GL_CALL(glUniform2f(textureOffset, 0.0f, 0.0f)); 
-            GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
+            RotationAboutZAxis(&(shaderInputs.rotationMatAboutZAxis), asteroid->rotation);
+            TranslationMat(&(shaderInputs.translationMat), asteroid->pos);
+            OpenGLSetShaderUniforms(&shaderInputs);
             GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
             asteroid = asteroid->next;
         }
-        
         
         // Draw animations
         AnimationClip *previousClip = 0;
@@ -1097,21 +1129,19 @@ int main(int argc, char **argv)
             {
                 real32 row = Floor((real32)currentClip->currentFrameIndex/(real32)currentClip->spritesheet->numFramesAlongWidth);
                 real32 column = (real32)currentClip->currentFrameIndex - (row * (real32)currentClip->spritesheet->numFramesAlongWidth);
-                v2 textureOffset_ = {column*currentClip->spritesheet->normalizedFrameWidth, row*currentClip->spritesheet->normalizedFrameHeight};
+                v2 textureOffset = {column*currentClip->spritesheet->normalizedFrameWidth, row*currentClip->spritesheet->normalizedFrameHeight};
                 
-                GL_CALL(glActiveTexture(GL_TEXTURE0));
-                GL_CALL(glBindTexture(GL_TEXTURE_2D, currentClip->spritesheet->textureInfo.textureId));
-                GL_CALL(glBindVertexArray(currentClip->spritesheet->vao));
-                GL_CALL(glUseProgram(programId));
+                shaderInputs.textureId = currentClip->spritesheet->textureInfo.textureId;
+                shaderInputs.vao = currentClip->spritesheet->vao;
+                Identity(&(shaderInputs.rotationMatAboutZAxis));
+                TranslationMat(&(shaderInputs.translationMat), currentClip->pos);
+                shaderInputs.textureOffset = textureOffset;
                 
-                Identity(&rotationMatAboutZAxis);
-                TranslationMat(&translationMat, currentClip->pos);
-                GL_CALL(glUniformMatrix4fv(rotationMatAboutZAxisUniformLocation, 1, GL_TRUE, rotationMatAboutZAxis.data)); 
-                GL_CALL(glUniform1i(samplerUniformLocation, 0)); // Setting the texture unit
-                GL_CALL(glUniform2f(textureOffset, textureOffset_.x, textureOffset_.y)); 
-                GL_CALL(glUniformMatrix4fv(translationMatUniformLocation, 1, GL_TRUE, translationMat.data)); 
-                GL_CALL(glUniformMatrix4fv(orthoProjectionUniformLocation, 1, GL_TRUE, orthoProjection.data)); 
+                OpenGLBind_Texture_VAO_Program(&shaderInputs);
+                OpenGLSetShaderUniforms(&shaderInputs);
                 GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
+                
+                previousClip = currentClip;
             }
             
             currentClip = nextClip;
@@ -1119,9 +1149,7 @@ int main(int argc, char **argv)
         
         
         // Unbind stuff
-        GL_CALL(glUseProgram(0));
-        GL_CALL(glBindVertexArray(0));
-        GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+        OpenGLUnbind_Texture_VAO_Program();
         if(wasBlendEnabled == GL_FALSE)
         {
             glDisable(GL_BLEND);

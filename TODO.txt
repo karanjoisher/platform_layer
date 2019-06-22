@@ -5,11 +5,13 @@ Demo
     [] UI
     {
         [] Start game button
-        [] Highscorers list..??
+        [] CONTROLS (Probably just show it at the corner of the screen)
+        [] Credits .. ?
         [] Render Score and Lives remaining
     }
     [] Shorten the explosion sound
     [] Temporary storage functionality for loading shader strings
+    [] Check all the linked list deletions to make sure previous pointers are being updated 
 }
 
 API
@@ -87,4 +89,53 @@ Linux
     [x] OpenGL
     [x] Draw Offscreen buffer using OpenGL and blend properly
     [x] Convert glxMakeCurrents in code to PfMakeCurrents
+}
+
+
+Scratch
+{
+    
+    
+    enum shader_type
+    {
+        basic_shader,
+            single_channel_shader
+    }
+    
+    
+    struct Shader
+    {
+        shader_type type;
+            union
+        {
+            struct
+            {
+                samplerLocation,
+                    textureOffset,
+                    rotation,
+                    translation,
+                    orthographic
+            };
+            struct
+            {
+                slls;
+                    smdsm;
+                    mddsm;
+            };
+        };
+        u32 id;
+            u32 uniformIds[];
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 }
