@@ -3,7 +3,10 @@
 #define ARRAY_COUNT(Array) (sizeof(Array) / sizeof((Array)[0]))
 
 #if DEBUG_BUILD
+
 #define ASSERT(expression, assertMessage) if(!(expression)) fprintf(stderr, "ASSERTION FAILED: %s [LINE: %d, FUNCTION:%s, FILE:%s]\n",assertMessage, __LINE__, __func__, __FILE__), *((int*)(0)) = 0;
+
+
 #else
 #define ASSERT(expression, assertMessage)
 #endif

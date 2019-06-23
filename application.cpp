@@ -10,7 +10,9 @@
 
 #if 1
 #define STB_IMAGE_IMPLEMENTATION
+#define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_image.h"
+#include "stb_truetype.h"
 
 struct ChunkAllocator
 {
@@ -20,6 +22,7 @@ struct ChunkAllocator
     int32 nextFreeChunkIndex;
 };
 
+
 void InitializeChunkAllocator(ChunkAllocator *ca)
 {
     ca->nextFreeChunkIndex = 0;
@@ -28,6 +31,11 @@ void InitializeChunkAllocator(ChunkAllocator *ca)
         int32 *chunk = (int32*)(ca->base + (i * ca->chunkSize));
         *chunk = i + 1;
     }
+}
+
+void FreeAllChunks(ChunkAllocator *ca)
+{
+    InitializeChunkAllocator(ca);
 }
 
 
@@ -156,6 +164,7 @@ struct GameState
     v2 spaceshipDim;
     v3 spaceshipPos;
     v3 spaceshipVel;
+    real32 safetyRadius;
     real32 spaceshipRotation;
     
     v3 debrisPos;
@@ -167,6 +176,10 @@ struct GameState
     
     ChunkAllocator asteroidAllocator;
     Asteroid *asteroids;
+    real32 asteroidSpawnClock;
+    real32 asteroidSpawnDelay;
+    int32 asteroidsCount;
+    int32 desiredAsteroidsCount;
     
     ChunkAllocator playingSoundAllocator;
     uint32 playingSoundNextId;
@@ -183,6 +196,9 @@ struct GameState
     int32 playBackSlot;
     int32 recordSlot;
     int32 totalSlots;
+    
+    bool paused;
+    int32 livesRemaining;
 };
 
 
@@ -388,26 +404,77 @@ void OpenGLSetUniform4fv(char *uniformName, real32 *val, uint32 programId)
     GL_CALL(glUniformMatrix4fv(uniformLocation, 1, GL_TRUE, val)); 
 }
 
+enum shader_type
+{
+    basic_shader,
+    single_channel_shader,
+    solid_color_shader
+};
+
+
 struct ShaderInputs
 {
-    uint32 textureId;
-    uint32 vao;
-    uint32 programId;
-    int32 sampler;
-    v2 textureOffset;
-    mat4 rotationMatAboutZAxis;
-    mat4 translationMat;
-    mat4 orthoProjection;
+    shader_type type;
+    union
+    {
+        struct
+        {
+            uint32 textureId;
+            uint32 vao;
+            uint32 programId;
+            int32 sampler;
+            v2 textureOffset;
+            mat4 rotationMatAboutZAxis;
+            mat4 translationMat;
+            mat4 orthoProjection;
+        };
+        
+        struct
+        {
+            uint32 textureId;
+            uint32 vao;
+            uint32 programId;
+            int32 sampler;
+            v2 textureOffset;
+            mat4 rotationMatAboutZAxis;
+            mat4 translationMat;
+            mat4 orthoProjection;
+            v4 color;
+        };
+        
+        struct
+        {
+            uint32 vao;
+            uint32 programId;
+            int32 sampler;
+            mat4 rotationMatAboutZAxis;
+            mat4 translationMat;
+            mat4 orthoProjection;
+            v4 color;
+        };
+        
+    };
 };
 
 
 void OpenGLSetShaderUniforms(ShaderInputs *input)
 {
-    OpenGLSetUniform4fv("rotationMatAboutZAxis", input->rotationMatAboutZAxis.data, input->programId); 
-    OpenGLSetUniform4fv("translationMat", input->translationMat.data, input->programId);
-    OpenGLSetUniform4fv("orthoProjection", input->orthoProjection.data, input->programId); 
-    OpenGLSetUniform2f("textureOffset", input->textureOffset, input->programId);
-    OpenGLSetUniform1i("texture1", input->sampler, input->programId);
+    if(input->type == basic_shader || input->type == single_channel_shader || input->type == solid_color_shader)
+    {
+        OpenGLSetUniform4fv("rotationMatAboutZAxis", input->rotationMatAboutZAxis.data, input->programId); 
+        OpenGLSetUniform4fv("translationMat", input->translationMat.data, input->programId);
+        OpenGLSetUniform4fv("orthoProjection", input->orthoProjection.data, input->programId); 
+    }
+    if(input->type == basic_shader || input->type == single_channel_shader)
+    {
+        OpenGLSetUniform2f("textureOffset", input->textureOffset, input->programId);
+        OpenGLSetUniform1i("texture1", input->sampler, input->programId);
+    }
+    if(input->type == single_channel_shader || input->type == solid_color_shader)
+    {
+        OpenGLSetUniform4f("color", input->color, input->programId);
+    }
+    
 }
 
 void OpenGLBind_Texture_VAO_Program(ShaderInputs *shaderInputs)
@@ -468,6 +535,89 @@ uint32 OpenGLGenProgramId(char *vertexShaderSource, char *fragmentShaderSource)
 }
 
 
+
+
+void OpenGLDrawRectangle(v4 rect, v4 screenRect, v4 color, uint32 programId, real32 rotateDegrees = 0.0f)
+{
+    
+    static bool firstCall = true;
+    static uint32 vao;
+    static uint32 vbo;
+    static uint32 ebo;
+    
+    real32 width = rect.w;
+    real32 height = rect.h;
+    
+    v2 max = {width/2.0f, height/2.0f};
+    v2 min = {-(width/2.0f), -(height/2.0f)};
+    
+    real32 vertices[] = 
+    {
+        // positions          
+        max.x, max.y, 0.0f,   // top right
+        max.x, min.y, 0.0f,   // bottom right
+        min.x, min.y, 0.0f,    // bottom left
+        min.x, max.y, 0.0,    // top left 
+    };
+    
+    
+    if(firstCall)
+    {
+        firstCall = false;
+        uint32 quadIndices[] = 
+        {
+            0, 1, 3, // first triangle
+            1, 2, 3  // second triangle
+        };
+        
+        GL_CALL(glGenVertexArrays(1, &vao));
+        GL_CALL(glGenBuffers(1, &vbo));
+        GL_CALL(glGenBuffers(1, &ebo));
+        GL_CALL(glBindVertexArray(vao));
+        GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, vbo));
+        GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_DYNAMIC_DRAW));
+        GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo));
+        GL_CALL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(quadIndices), quadIndices, GL_STATIC_DRAW));
+        GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0));
+        GL_CALL(glEnableVertexAttribArray(0));
+    }
+    else
+    {
+        GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, vbo));
+        GL_CALL(glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices));
+    }
+    
+    
+    ShaderInputs shaderInputs = {};
+    shaderInputs.type = solid_color_shader;
+    shaderInputs.vao = vao;
+    shaderInputs.programId = programId;
+    RotationAboutZAxis(&(shaderInputs.rotationMatAboutZAxis), rotateDegrees);
+    TranslationMat(&shaderInputs.translationMat, {rect.x + max.x, rect.y + max.y});
+    
+    shaderInputs.orthoProjection.data[0] = 2.0f/screenRect.w;
+    shaderInputs.orthoProjection.data[3] = -1.0f;
+    shaderInputs.orthoProjection.data[5] = 2.0f/screenRect.h;
+    shaderInputs.orthoProjection.data[7] = -1.0f;
+    shaderInputs.orthoProjection.data[10] = 1.0f;
+    shaderInputs.orthoProjection.data[15] = 1.0f;
+    
+    shaderInputs.color = color;
+    
+    OpenGLBind_Texture_VAO_Program(&shaderInputs);
+    OpenGLSetShaderUniforms(&shaderInputs);
+    GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
+    OpenGLUnbind_Texture_VAO_Program();
+}
+
+
+void OpenGLDrawRectangle(v2 pt1, v2 pt2, v4 screenRect, v4 color, uint32 programId, real32 rotateDegrees = 0.0f)
+{
+    v4 rect = {pt1.x, pt1.y, pt2.x - pt1.x, pt2.y - pt1.y};
+    OpenGLDrawRectangle(rect, screenRect, color, programId, rotateDegrees);
+}
+
+
 void CreateSpritesheet(char *imagePath, Spritesheet *spritesheet, int32 numFramesAlongWidth, int32 numFramesAlongHeight)
 {
     spritesheet->textureInfo = OpenGLGenTexture(imagePath);
@@ -481,8 +631,70 @@ void CreateSpritesheet(char *imagePath, Spritesheet *spritesheet, int32 numFrame
     spritesheet->vao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin((int32)spritesheet->frameWidth, (int32)spritesheet->frameHeight, {0.0f, 0.0f}, {spritesheet->normalizedFrameWidth, spritesheet->normalizedFrameHeight});
 }
 
+char* ReadEntireFileAndNullTerminate(char *filepath, Memory *mem)
+{
+    uint64 fileSize = PfGetFileSize(filepath);
+    char *fileData = (char *)PushSize(mem, fileSize + 1);
+    int64 bytesRead = PfReadEntireFile(filepath, fileData);
+    ASSERT(bytesRead == (int64)fileSize, "Did not read all bytes");
+    fileData[fileSize] = 0;
+    return fileData;
+}
 
 
+char* ReadEntireFile(char *filepath, Memory *mem)
+{
+    uint64 fileSize = PfGetFileSize(filepath);
+    char *fileData = (char *)PushSize(mem, fileSize);
+    int64 bytesRead = PfReadEntireFile(filepath, fileData);
+    ASSERT(bytesRead == (int64)fileSize, "Did not read all bytes");
+    return fileData;
+}
+
+
+void DrawRectangle(uint8 *offscreenMemory, int width, int height, uint32 pitch,real32 rectMinX, real32 rectMinY, real32 rectMaxX, real32 rectMaxY, uint32 color)
+{
+    
+    int32 minX = RoundReal32ToInt32(rectMinX);
+    int32 minY = RoundReal32ToInt32(rectMinY);
+    int32 maxX = RoundReal32ToInt32(rectMaxX);
+    int32 maxY = RoundReal32ToInt32(rectMaxY);
+    
+    if(minX < 0)
+    {
+        minX = 0;
+    }
+    
+    if(minY < 0)
+    {
+        minY = 0;
+    }
+    
+    if(maxX > width)
+    {
+        maxX = width;
+    }
+    
+    if(maxY > height)
+    {
+        maxY = height;
+    }
+    
+    int  bytesPerPixel = 4;
+    uint8 *row = offscreenMemory + (minY * pitch) + (minX * bytesPerPixel); 
+    for(int y = minY; y < maxY; y++)
+    {
+        uint32 *pixel = (uint32*)row;
+        for(int x = minX; x < maxX; x++)
+        {
+            *pixel = color;
+            pixel++;
+        }
+        row = row + pitch;
+    }
+}
+
+#if 1
 int main(int argc, char **argv)
 {
     real32 fps = 30.0f;
@@ -548,24 +760,6 @@ int main(int argc, char **argv)
     gameState->asteroidAllocator.base = (uint8 *)PushArray(&gameStateStorage, Asteroid, gameState->asteroidAllocator.length);
     InitializeChunkAllocator(&(gameState->asteroidAllocator));
     
-    for(int i = 0; i < 10; i++)
-    {
-        Asteroid *asteroid = (Asteroid*)AllocateChunk(&(gameState->asteroidAllocator));
-        if(asteroid)
-        {
-            asteroid->pos = {(real32)(rand() % clientRect.width), (real32)(rand() % clientRect.height)};
-            
-            real32 signMultiplier1 = (rand() % 2 == 0) ? 1.0f : -1.0f;
-            real32 signMultiplier2 = (rand() % 2 == 0) ? 1.0f : -1.0f;
-            
-            asteroid->vel = {(real32)((rand() % 100) + 50) * signMultiplier1, (real32)((rand() % 100) + 50) * signMultiplier2};
-            asteroid->rotation = 0.0f;
-            asteroid->rotationalVelocity = (real32)((rand() % 500) + 50) * signMultiplier1;
-            asteroid->next = gameState->asteroids;
-            gameState->asteroids = asteroid;
-        }
-    }
-    
     gameState->playingSoundAllocator.length = 30;
     gameState->playingSoundNextId = 1;
     gameState->playingSoundAllocator.chunkSize = sizeof(PlayingSound);
@@ -609,12 +803,19 @@ int main(int argc, char **argv)
     int64 inputFileHandle = -1;
     
     gameState->spaceshipPos = {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f};
+    gameState->paused = true;
+    gameState->livesRemaining = 3;
+    gameState->asteroidSpawnClock = 0.0f;
+    gameState->asteroidSpawnDelay = 0.5f;
+    gameState->asteroidsCount = 0;
+    gameState->desiredAsteroidsCount = 7;
     gameState->debrisPos = {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f};
     gameState->spaceshipVel = {};
     gameState->debrisVel = {10.0f, 0.0f, 0.0f};
     gameState->spaceshipRotation = 0.0f;
     gameState->bulletRadius = 3.0f;
     gameState->spaceshipRadius = 35.0f;
+    gameState->safetyRadius = gameState->spaceshipRadius * 3.0f;
     gameState->asteroidRadius = 40.0f;
     gameState->playBackSlot = playBackSlot;
     gameState->totalSlots = 10;
@@ -638,17 +839,79 @@ int main(int argc, char **argv)
     uint32 nebulaVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin(nebulaTextureInfo.width, nebulaTextureInfo.height);
     uint32 debrisVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin(nebulaTextureInfo.width * 2, nebulaTextureInfo.height, {0.0f, 0.0f}, {2.0f, 1.0f});
     
-    uint32 vertexShaderFileSize = (uint32)PfGetFileSize("../basic_vertex_shader.shader");
-    uint32 fragmentShaderFileSize = (uint32)PfGetFileSize("../basic_fragment_shader.shader");
+    Memory restorePoint = gameStateStorage;
     
-    char *vertexShaderSource = (char*)PushSize(&gameStateStorage, vertexShaderFileSize + 1);
-    char *fragmentShaderSource = (char*)PushSize(&gameStateStorage, fragmentShaderFileSize + 1);
-    PfReadEntireFile("../basic_vertex_shader.shader", vertexShaderSource);
-    vertexShaderSource[vertexShaderFileSize] = 0;
-    PfReadEntireFile("../basic_fragment_shader.shader", fragmentShaderSource);
-    fragmentShaderSource[fragmentShaderFileSize] = 0;
+    char *vertexShaderSource = ReadEntireFileAndNullTerminate("../basic_vertex_shader.shader", &gameStateStorage);
+    char *vertexShaderSource2 = ReadEntireFileAndNullTerminate("../solid_color_vertex_shader.shader", &gameStateStorage);
+    char *fragmentShaderSource = ReadEntireFileAndNullTerminate("../basic_fragment_shader.shader", &gameStateStorage);
+    char *fragmentShaderSource2 = ReadEntireFileAndNullTerminate("../single_channel_fragment_shader.shader", &gameStateStorage);
+    char *fragmentShaderSource3 = ReadEntireFileAndNullTerminate("../solid_color_fragment_shader.shader", &gameStateStorage);
     
     uint32 programId = OpenGLGenProgramId(vertexShaderSource, fragmentShaderSource);
+    uint32 program2Id = OpenGLGenProgramId(vertexShaderSource, fragmentShaderSource2);
+    uint32 program3Id = OpenGLGenProgramId(vertexShaderSource2, fragmentShaderSource3);
+    
+    gameStateStorage = restorePoint;
+    
+    //Fonts
+    restorePoint = assetStorage;
+    
+    char *fontFilepath = "../data/fonts/DancingScript-Regular.ttf";
+    uint64 fileSize = PfGetFileSize(fontFilepath);
+    uint8* fontFileData = (uint8 *)PushSize(&assetStorage, fileSize); 
+    PfReadEntireFile(fontFilepath, fontFileData);
+    int32 fontBitmapWidth = 1024;
+    int32 fontBitmapHeight = 1024;
+    int32 fontBitmapBytesPerPixel = 1;
+    int32 firstCodepoint = 32;
+    int32 numCodepoints = 95;
+    uint32 fontTextureId, fontVao, fontVbo, fontEbo;
+    int32 fontBitmapPitch = fontBitmapBytesPerPixel * fontBitmapWidth;
+    uint8* fontBitmap = (uint8 *)PushSize(&assetStorage, fontBitmapHeight * fontBitmapWidth * fontBitmapBytesPerPixel); 
+    
+    stbtt_packedchar charData[96] = {};
+    stbtt_pack_context packContext;
+    stbtt_fontinfo fontInfo;
+    stbtt_InitFont(&fontInfo, fontFileData, stbtt_GetFontOffsetForIndex(fontFileData,0));
+    real32 fontScale = 80;
+    real32 scale = stbtt_ScaleForPixelHeight(&fontInfo, fontScale);
+    int32 ascent, descent;
+    stbtt_GetFontVMetrics(&fontInfo, &ascent, &descent, 0);
+    
+    int32 ret = stbtt_PackBegin(&packContext, fontBitmap, fontBitmapWidth, fontBitmapHeight, 0, 1, 0);
+    ASSERT(ret == 1 , "");
+    ret = stbtt_PackFontRange(&packContext, fontFileData, 0, fontScale, firstCodepoint, numCodepoints, charData);
+    stbtt_PackEnd(&packContext);
+    
+    GL_CALL(glGenTextures(1, &fontTextureId));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, fontTextureId));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, fontBitmapWidth, fontBitmapHeight, 0, GL_RED, GL_UNSIGNED_BYTE, fontBitmap));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+    
+    assetStorage = restorePoint;
+    
+    real32 vertices[20] = {};
+    uint32 quadIndices[] = 
+    {
+        0, 1, 3, // first triangle
+        1, 2, 3  // second triangle
+    };
+    
+    GL_CALL(glGenVertexArrays(1, &fontVao));
+    GL_CALL(glGenBuffers(1, &fontVbo));
+    GL_CALL(glGenBuffers(1, &fontEbo));
+    GL_CALL(glBindVertexArray(fontVao));
+    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, fontVbo));
+    GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_DYNAMIC_DRAW));
+    GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, fontEbo));
+    GL_CALL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(quadIndices), quadIndices, GL_STATIC_DRAW));
+    GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0));
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float))));
+    GL_CALL(glEnableVertexAttribArray(1));
+    GL_CALL(glBindVertexArray(0));
+    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, 0));
+    GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
     
     // Sprite animation
     
@@ -906,6 +1169,68 @@ int main(int argc, char **argv)
             }
         }
         
+        if(!gameState->paused)
+        {
+            gameState->asteroidSpawnClock += dT;
+            while(gameState->asteroidSpawnClock >= gameState->asteroidSpawnDelay)
+            {
+                gameState->asteroidSpawnClock -= gameState->asteroidSpawnDelay;
+                if(gameState->asteroidsCount < gameState->desiredAsteroidsCount)
+                {
+                    Asteroid *asteroid = (Asteroid*)AllocateChunk(&(gameState->asteroidAllocator));
+                    if(asteroid)
+                    {
+                        real32 randomSign = rand() % 2 == 0 ? 1.0f : -1.0f;
+                        real32 randomAngle = gameState->spaceshipRotation + Rand(45, 315);
+                        v2 dir = {Cosine(randomAngle * DEG_TO_RAD), Sine(randomAngle * DEG_TO_RAD)};
+                        
+                        v2 distanceToWalls = {INFINITY, INFINITY};
+                        bool setDistanceToAtleastOneWall = false;
+                        if(dir.y != 0)
+                        {
+                            v2 b = {0.0f, (real32)clientRect.height};
+                            v2 c = {gameState->spaceshipPos.y, gameState->spaceshipPos.y};
+                            v2 a = (b - c)/dir.y;
+                            ASSERT(a.x * a.y < 0.0f, "Not possible to reach both ends of screen when moving along a dir");
+                            distanceToWalls.y = a.x > 0.0f ? a.x : a.y;
+                            setDistanceToAtleastOneWall = true;
+                        }
+                        
+                        if(dir.x != 0)
+                        {
+                            v2 b = {0.0f, (real32)clientRect.width};
+                            v2 c = {gameState->spaceshipPos.x, gameState->spaceshipPos.x};
+                            v2 a = (b - c)/dir.x;
+                            ASSERT(a.x * a.y < 0.0f, "Not possible to reach both ends of screen when moving along a dir");
+                            distanceToWalls.x = a.x > 0.0f ? a.x : a.y;
+                            setDistanceToAtleastOneWall = true;
+                        }
+                        
+                        ASSERT(setDistanceToAtleastOneWall, "Dir might be 0 as we did not reach any wall along the dir");
+                        real32 distanceToNearestWall = distanceToWalls.x < distanceToWalls.y ? distanceToWalls.x : distanceToWalls.y;
+                        real32 randomDistance;
+                        if(distanceToNearestWall < gameState->safetyRadius)
+                        {
+                            randomDistance = gameState->safetyRadius;
+                        }
+                        else
+                        {
+                            randomDistance = Rand((int32)gameState->safetyRadius, (int32)distanceToNearestWall);
+                        }
+                        
+                        v3 dir3 = {dir.x, dir.y ,0.0f};
+                        asteroid->pos = gameState->spaceshipPos + (dir3 * randomDistance);
+                        asteroid->vel = dir3 * randomSign * Rand(50, 100) ;
+                        asteroid->rotation = 0.0f;
+                        asteroid->rotationalVelocity = Rand(50, 500) * randomSign;
+                        asteroid->next = gameState->asteroids;
+                        gameState->asteroids = asteroid;
+                        gameState->asteroidsCount++;
+                    }
+                }
+            }
+        }
+        
         Asteroid *asteroid = gameState->asteroids;
         while(asteroid)
         {
@@ -943,9 +1268,10 @@ int main(int argc, char **argv)
                     Asteroid *next = asteroid->next;
                     FreeChunk(&(gameState->asteroidAllocator), (uint8 *)asteroid);
                     asteroid = next;
-                    
+                    gameState->asteroidsCount--;
                     PlaySound(gameState, boomSound, false, 0.2f, 0.2f);
                     PlayAnimation(gameState, explosionSpritesheet, explosionPos, 16.0f, 0, 24, 1);
+                    
                 }
                 else
                 {
@@ -999,6 +1325,14 @@ int main(int argc, char **argv)
                 FreeChunk(&(gameState->asteroidAllocator), (uint8 *)asteroid);
                 asteroid = next;
                 
+                gameState->asteroidsCount--;
+                gameState->livesRemaining--;
+                if(gameState->livesRemaining <= 0) 
+                {
+                    gameState->livesRemaining = 0; 
+                    gameState->paused = true;
+                }
+                
                 PlaySound(gameState, boomSound, false, 0.2f, 0.2f);
                 PlayAnimation(gameState, explosionSpritesheet, explosion1Pos, 16.0f, 0, 24, 1);
                 PlayAnimation(gameState, explosionSpritesheet2, explosion2Pos, 16.0f, 0, 24, 1);
@@ -1009,6 +1343,9 @@ int main(int argc, char **argv)
                 asteroid = asteroid->next;
             }
         }
+        
+        
+        
         PfTimestamp s2 = PfGetTimestamp();
         real32 t1 = PfGetSeconds(s1, s2);
 #endif
@@ -1023,6 +1360,7 @@ int main(int argc, char **argv)
         
         // Draw nebula
         ShaderInputs shaderInputs = {};
+        shaderInputs.type = basic_shader;
         shaderInputs.textureId = nebulaTextureInfo.textureId;
         shaderInputs.vao = nebulaVao;
         shaderInputs.programId = programId;
@@ -1040,6 +1378,7 @@ int main(int argc, char **argv)
         GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
         
         // Draw debris
+        shaderInputs.type = basic_shader;
         shaderInputs.textureId = debrisTextureInfo.textureId;
         shaderInputs.vao = debrisVao;
         Identity(&(shaderInputs.rotationMatAboutZAxis));
@@ -1050,6 +1389,7 @@ int main(int argc, char **argv)
         GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
         
         // Draw spaceship
+        shaderInputs.type = basic_shader;
         shaderInputs.textureId = spaceshipTextureInfo.textureId;
         shaderInputs.vao = spaceshipVao;
         RotationAboutZAxis(&(shaderInputs.rotationMatAboutZAxis), gameState->spaceshipRotation);
@@ -1067,6 +1407,7 @@ int main(int argc, char **argv)
         GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
         
         // Draw bullets
+        shaderInputs.type = basic_shader;
         shaderInputs.textureId = bulletTextureInfo.textureId;
         shaderInputs.vao = bulletVao;
         shaderInputs.textureOffset = {};
@@ -1084,6 +1425,7 @@ int main(int argc, char **argv)
         }
         
         // Draw asteroids
+        shaderInputs.type = basic_shader;
         shaderInputs.textureId = asteroidTextureInfo.textureId;
         shaderInputs.vao = asteroidVao;
         
@@ -1131,6 +1473,7 @@ int main(int argc, char **argv)
                 real32 column = (real32)currentClip->currentFrameIndex - (row * (real32)currentClip->spritesheet->numFramesAlongWidth);
                 v2 textureOffset = {column*currentClip->spritesheet->normalizedFrameWidth, row*currentClip->spritesheet->normalizedFrameHeight};
                 
+                shaderInputs.type = basic_shader;
                 shaderInputs.textureId = currentClip->spritesheet->textureInfo.textureId;
                 shaderInputs.vao = currentClip->spritesheet->vao;
                 Identity(&(shaderInputs.rotationMatAboutZAxis));
@@ -1147,6 +1490,95 @@ int main(int argc, char **argv)
             currentClip = nextClip;
         }
         
+        if(gameState->paused)
+        {
+            gameState->livesRemaining = 3;
+            
+            FreeAllChunks(&gameState->asteroidAllocator);
+            gameState->asteroidsCount = 0;
+            gameState->asteroids = 0;
+            gameState->asteroidSpawnClock = 0.0f;
+            
+            char *text = "START";
+            real32 x = (real32)clientRect.width/2.0f;
+            real32 y = (real32)clientRect.height/2.0f;
+            v4 screenRect = {0.0f, 0.0f, x * 2.0f, y * 2.0f};
+            v4 rect = {x, y, 20.0f, 20.0f};
+            
+            
+            OpenGLDrawRectangle({0.0f, 0.0f}, {screenRect.w, screenRect.h}, screenRect, {0.0f, 0.0f, 0.0f, 0.6f}, program3Id);
+            //baseline
+            //OpenGLDrawRectangle({x, y}, {screenRect.w, y + 1.0f}, screenRect, {1.0f, 1.0f, 1.0f, 1.0f}, program3Id);
+            //OpenGLDrawRectangle({x, y, 3.0f, scale}, screenRect, {1.0f, 0.0f, 0.0f, 1.0f}, program3Id);
+            
+            shaderInputs.type = single_channel_shader;
+            shaderInputs.textureId = fontTextureId;
+            shaderInputs.vao = fontVao;
+            shaderInputs.programId = program2Id;
+            OpenGLBind_Texture_VAO_Program(&shaderInputs);
+            
+#if 1
+            
+            for(int32 i = 0; i < 5; i++)
+            {
+                
+                stbtt_aligned_quad q;
+                int32 relativeIndex = text[i] - 32;
+                stbtt_packedchar a = charData[relativeIndex];
+#if 0
+                static bool firstTime = true;
+                if(firstTime)
+                {
+                    DEBUG_LOG("----------- %c --------------\n", text[i]);
+                    DEBUG_LOG("xoff: %.2f yoff:%.2f\nxoff2:%.2f yoff2:%.2f\nxAdvance:%.2f\nx0:%d y0:%d\nx1:%d y1:%d\n",
+                              a.xoff, a.yoff, a.xoff2, a.yoff2, a.xadvance, a.x0, a.y0, a.x1, a.y1);
+                    DEBUG_LOG("----------------------------\n");
+                }
+#endif
+                if(i == 0) x -= a.xoff;
+                
+                real32 tempX = x;
+                real32 tempY = y;
+                stbtt_GetPackedQuad(charData, fontBitmapWidth, fontBitmapHeight, text[i] - 32, &tempX, &tempY, &q, 0);
+                
+                real32 newVertices[] = 
+                {
+                    q.x0,q.y0, 0.0f, q.s0,q.t1,
+                    q.x1,q.y0, 0.0f, q.s1,q.t1,
+                    q.x1,q.y1, 0.0f, q.s1,q.t0,
+                    q.x0,q.y1, 0.0f, q.s0,q.t0
+                };
+                
+                GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, fontVbo));
+                GL_CALL(glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(newVertices), newVertices));
+                
+                Identity(&(shaderInputs.rotationMatAboutZAxis));
+                TranslationMat(&(shaderInputs.translationMat), {0.0F, -a.yoff});
+                shaderInputs.textureOffset = {};
+                shaderInputs.color = {1.0f, 1.0f, 1.0f, 1.0f};
+                OpenGLSetShaderUniforms(&shaderInputs);
+                
+                GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
+                
+#if 0
+                //xoff & xoff2
+                // NOTE(KARAN): Make sure to rebind font bindings if you uncomment this piece of code
+                OpenGLDrawRectangle({x + a.xoff, y + 2, -a.xoff, 1.0f}, screenRect, {0.0f, 0.0f, 1.0f, 1.0f}, program3Id);
+                OpenGLDrawRectangle({x, y + 4, a.xoff2, 1.0f}, screenRect, {0.0f, 1.0f, 0.0f, 1.0f}, program3Id);
+                
+                //yoff & yoff2
+                OpenGLDrawRectangle({x, y + a.yoff, 1.0f, -a.yoff}, screenRect, {0.0f, 0.0f, 1.0f, 1.0f}, program3Id);
+                OpenGLDrawRectangle({x + 2, y, 1.0f, a.yoff2}, screenRect, {0.0f, 1.0f, 0.0f, 1.0f}, program3Id);
+#endif
+                x = tempX;
+                y = tempY;
+            }
+#if 0
+            firstTime = false;
+#endif
+#endif
+            
+        }
         
         // Unbind stuff
         OpenGLUnbind_Texture_VAO_Program();
@@ -1298,4 +1730,5 @@ int main(int argc, char **argv)
     //DEBUG_LOG("Exiting application.\n");
     return 0;
 }
+#endif
 #endif

@@ -295,7 +295,7 @@ void my_stbtt_print(float x, float y, char *text)
          glTexCoord2f(q.s0,q.t1); glVertex2f(q.x0,q.y0);
          glTexCoord2f(q.s1,q.t1); glVertex2f(q.x1,q.y0);
          glTexCoord2f(q.s1,q.t0); glVertex2f(q.x1,q.y1);
-         glTexCoord2f(q.s0,q.t0); glVertex2f(q.x0,q.y1);
+         glTexCoord2f(q.s0,q.t0); glVertex2f(q.x0,q.y1);,
       }
       ++text;
    }
@@ -648,7 +648,7 @@ STBTT_DEF int  stbtt_PackFontRangesGatherRects(stbtt_pack_context *spc, const st
 STBTT_DEF void stbtt_PackFontRangesPackRects(stbtt_pack_context *spc, stbrp_rect *rects, int num_rects);
 STBTT_DEF int  stbtt_PackFontRangesRenderIntoRects(stbtt_pack_context *spc, const stbtt_fontinfo *info, stbtt_pack_range *ranges, int num_ranges, stbrp_rect *rects);
 // Calling these functions in sequence is roughly equivalent to calling
-// stbtt_PackFontRanges(). If you more control over the packing of multiple
+// stbtt_PackFontRanges(). If you want more control over the packing of multiple
 // fonts, or if you want to pack custom data into a font texture, take a look
 // at the source to of stbtt_PackFontRanges() and create a custom version 
 // using these functions, e.g. call GatherRects multiple times,
