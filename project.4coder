@@ -37,7 +37,7 @@ command_list = {
 			   	},
 					
 			   	{
-				   	"sh build.sh",
+				   	"sh release_build.sh",
 				   	.os = "linux",	
 			   	},
 				},

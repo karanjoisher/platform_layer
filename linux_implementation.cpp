@@ -1401,7 +1401,7 @@ void PfSleep(int32 milliseconds)
 int64 PfWriteEntireFile(char *filename, void *data, uint32 size)
 {
     ssize_t bytesWritten;
-    int fileHandle = open(filename, O_WRONLY | O_CREAT);
+    int fileHandle = open(filename, O_WRONLY | O_CREAT, 0600);
     
     if(fileHandle == -1)
     {

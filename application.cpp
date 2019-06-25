@@ -14,6 +14,9 @@
 #include "stb_image.h"
 #include "stb_truetype.h"
 
+
+
+
 struct ChunkAllocator
 {
     uint8 *base;
@@ -91,7 +94,39 @@ struct Memory
     sizet size;
     sizet used;
 };
+global_variable Memory globalTemporaryStorage = {};
 
+
+#define PushStruct(memory, type) (type*)(PushSize(memory, sizeof(type)))
+#define PushArray(memory, type, count) (type*)(PushSize(memory, sizeof(type) * count))
+uint8* PushSize(Memory *memory, sizet required)
+{
+    ASSERT(memory->used + required <= memory->size, "Memory overflow");
+    uint8* result = memory->base + memory->used;
+    memory->used += required;
+    return result;
+}
+
+
+char* ReadEntireFileAndNullTerminate(char *filepath, Memory *mem)
+{
+    uint64 fileSize = PfGetFileSize(filepath);
+    char *fileData = (char *)PushSize(mem, fileSize + 1);
+    int64 bytesRead = PfReadEntireFile(filepath, fileData);
+    ASSERT(bytesRead == (int64)fileSize, "Did not read all bytes");
+    fileData[fileSize] = 0;
+    return fileData;
+}
+
+
+char* ReadEntireFile(char *filepath, Memory *mem)
+{
+    uint64 fileSize = PfGetFileSize(filepath);
+    char *fileData = (char *)PushSize(mem, fileSize);
+    int64 bytesRead = PfReadEntireFile(filepath, fileData);
+    ASSERT(bytesRead == (int64)fileSize, "Did not read all bytes");
+    return fileData;
+}
 
 struct Sound
 {
@@ -158,6 +193,13 @@ struct AnimationClip
     AnimationClip *next;
 };
 
+struct HitpointDisplay
+{
+    v3 pos;
+    uint64 value;
+    real32 durationSpent;
+    HitpointDisplay *next;
+};
 
 struct GameState
 {
@@ -185,9 +227,11 @@ struct GameState
     uint32 playingSoundNextId;
     PlayingSound *soundsPlaying;
     
-    
     ChunkAllocator animationClipsAllocator;
     AnimationClip *animationClips;
+    
+    ChunkAllocator hitpointDisplayAllocator;
+    HitpointDisplay *hitpointDisplays;
     
     real32 spaceshipRadius;
     real32 bulletRadius;
@@ -199,6 +243,7 @@ struct GameState
     
     bool paused;
     int32 livesRemaining;
+    uint64 score;
 };
 
 
@@ -284,16 +329,6 @@ void DestroySound(GameState *gameState, PlayingSoundId playingSoundId)
     if(soundPlaying) soundPlaying->destroyNow = true;
 }
 
-
-#define PushStruct(memory, type) (type*)(PushSize(memory, sizeof(type)))
-#define PushArray(memory, type, count) (type*)(PushSize(memory, sizeof(type) * count))
-uint8* PushSize(Memory *memory, sizet required)
-{
-    ASSERT(memory->used + required <= memory->size, "Memory overflow");
-    uint8* result = memory->base + memory->used;
-    memory->used += required;
-    return result;
-}
 
 struct HotCodeRelaunchPersistentData
 {
@@ -415,46 +450,17 @@ enum shader_type
 struct ShaderInputs
 {
     shader_type type;
-    union
-    {
-        struct
-        {
-            uint32 textureId;
-            uint32 vao;
-            uint32 programId;
-            int32 sampler;
-            v2 textureOffset;
-            mat4 rotationMatAboutZAxis;
-            mat4 translationMat;
-            mat4 orthoProjection;
-        };
-        
-        struct
-        {
-            uint32 textureId;
-            uint32 vao;
-            uint32 programId;
-            int32 sampler;
-            v2 textureOffset;
-            mat4 rotationMatAboutZAxis;
-            mat4 translationMat;
-            mat4 orthoProjection;
-            v4 color;
-        };
-        
-        struct
-        {
-            uint32 vao;
-            uint32 programId;
-            int32 sampler;
-            mat4 rotationMatAboutZAxis;
-            mat4 translationMat;
-            mat4 orthoProjection;
-            v4 color;
-        };
-        
-    };
+    uint32 textureId;
+    uint32 vao;
+    uint32 programId;
+    int32 sampler;
+    v2 textureOffset;
+    mat4 rotationMatAboutZAxis;
+    mat4 translationMat;
+    mat4 orthoProjection;
+    v4 color;
 };
+
 
 
 void OpenGLSetShaderUniforms(ShaderInputs *input)
@@ -491,6 +497,170 @@ void OpenGLUnbind_Texture_VAO_Program()
     GL_CALL(glBindVertexArray(0));
     GL_CALL(glUseProgram(0));
 }
+
+
+
+struct FontInfo
+{
+    int32 bitmapWidth;
+    int32 bitmapHeight;
+    int32 bytesPerPixel;
+    real32 scale;
+    int32 firstCodepoint;
+    int32 numCodepoints;
+    stbtt_packedchar *charData;
+    
+    uint32 textureId;
+    uint32 vao;
+    uint32 vbo;
+    uint32 ebo;
+};
+
+void CreateFont(FontInfo *font, char* filepath, int32 firstCodepoint, int32 numCodepoints, real32 scale, Memory *storage)
+{
+    font->bitmapWidth = 512;
+    font->scale = scale;
+    font->bitmapHeight = 512;
+    font->bytesPerPixel = 1;
+    font->firstCodepoint = 32;
+    font->numCodepoints = 95;
+    font->charData = (stbtt_packedchar *)PushArray(storage, stbtt_packedchar, font->numCodepoints);
+    
+    Memory restorePoint = globalTemporaryStorage;
+    uint8* fontFileData = (uint8*)ReadEntireFile(filepath, &globalTemporaryStorage); 
+    int32 fontBitmapPitch = font->bytesPerPixel * font->bitmapWidth;
+    uint8* fontBitmap = (uint8 *)PushSize(&globalTemporaryStorage, font->bitmapHeight * font->bitmapWidth * font->bytesPerPixel); 
+    
+    stbtt_pack_context packContext;
+    real32 fontScale = 80;
+    int32 ret = stbtt_PackBegin(&packContext, fontBitmap, font->bitmapWidth, font->bitmapHeight, 0, 1, 0);
+    ASSERT(ret == 1 , "");
+    ret = stbtt_PackFontRange(&packContext, fontFileData, 0, font->scale, font->firstCodepoint, font->numCodepoints, font->charData);
+    ASSERT(ret == 1 , "");
+    stbtt_PackEnd(&packContext);
+    
+    GL_CALL(glGenTextures(1, &font->textureId));
+    GL_CALL(glBindTexture(GL_TEXTURE_2D, font->textureId));
+    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, font->bitmapWidth, font->bitmapHeight, 0, GL_RED, GL_UNSIGNED_BYTE, fontBitmap));
+    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+    
+    globalTemporaryStorage = restorePoint;
+    
+    real32 vertices[20] = {};
+    uint32 quadIndices[] = 
+    {
+        0, 1, 3, // first triangle
+        1, 2, 3  // second triangle
+    };
+    
+    GL_CALL(glGenVertexArrays(1, &font->vao));
+    GL_CALL(glGenBuffers(1, &font->vbo));
+    GL_CALL(glGenBuffers(1, &font->ebo));
+    GL_CALL(glBindVertexArray(font->vao));
+    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, font->vbo));
+    GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_DYNAMIC_DRAW));
+    GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, font->ebo));
+    GL_CALL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(quadIndices), quadIndices, GL_STATIC_DRAW));
+    GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(real32), (void*)0));
+    GL_CALL(glEnableVertexAttribArray(0));
+    GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(real32), (void*)(3 * sizeof(real32))));
+    GL_CALL(glEnableVertexAttribArray(1));
+    GL_CALL(glBindVertexArray(0));
+    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, 0));
+    GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
+}
+
+
+v2 GetTextBounds(char* text, FontInfo *font)
+{
+    v2 bounds = {};
+    v2 basepoint = {0.0f, 0.0f};
+    real32 x = basepoint.x;
+    real32 y = basepoint.y;
+    for(int32 i = 0; text[i] != 0; i++)
+    {
+        stbtt_aligned_quad q;
+        int32 relativeIndex = text[i] - font->firstCodepoint;
+        stbtt_packedchar a = font->charData[relativeIndex];
+        
+        if(i == 0) x -= a.xoff;
+        
+        real32 tempX = x;
+        real32 tempY = y;
+        stbtt_GetPackedQuad(font->charData, font->bitmapWidth, font->bitmapHeight, relativeIndex, &tempX, &tempY, &q, 0);
+        
+        real32 fontCharHeight = q.y1 - q.y0;
+        if(bounds.y < fontCharHeight)
+        {
+            bounds.y = fontCharHeight;
+        }
+        
+        x = tempX;
+        y = tempY;
+    }
+    
+    bounds.x = x;
+    return bounds;
+}
+
+void OpenGLDrawTextAt(v2 basepoint, v2 screenDim, char *text, v4 color, FontInfo *font, uint32 programId)
+{
+    ShaderInputs shaderInputs = {};
+    
+    shaderInputs.orthoProjection.data[0] = 2.0f/screenDim.x;
+    shaderInputs.orthoProjection.data[3] = -1.0f;
+    shaderInputs.orthoProjection.data[5] = 2.0f/screenDim.y;
+    shaderInputs.orthoProjection.data[7] = -1.0f;
+    shaderInputs.orthoProjection.data[10] = 1.0f;
+    shaderInputs.orthoProjection.data[15] = 1.0f;
+    
+    
+    shaderInputs.type = single_channel_shader;
+    shaderInputs.textureId = font->textureId;
+    shaderInputs.vao = font->vao;
+    shaderInputs.programId = programId;
+    
+    real32 x = basepoint.x;
+    real32 y = basepoint.y;
+    
+    OpenGLBind_Texture_VAO_Program(&shaderInputs);
+    for(int32 i = 0; text[i] != 0; i++)
+    {
+        stbtt_aligned_quad q;
+        int32 relativeIndex = text[i] - font->firstCodepoint;
+        stbtt_packedchar a = font->charData[relativeIndex];
+        
+        if(i == 0) x -= a.xoff;
+        
+        real32 tempX = x;
+        real32 tempY = y;
+        stbtt_GetPackedQuad(font->charData, font->bitmapWidth, font->bitmapHeight, relativeIndex, &tempX, &tempY, &q, 0);
+        
+        real32 newVertices[] = 
+        {
+            q.x0,q.y0, 0.0f, q.s0,q.t1,
+            q.x1,q.y0, 0.0f, q.s1,q.t1,
+            q.x1,q.y1, 0.0f, q.s1,q.t0,
+            q.x0,q.y1, 0.0f, q.s0,q.t0
+        };
+        
+        GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, font->vbo));
+        GL_CALL(glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(newVertices), newVertices));
+        
+        Identity(&(shaderInputs.rotationMatAboutZAxis));
+        TranslationMat(&(shaderInputs.translationMat), {0.0F, -a.yoff});
+        shaderInputs.textureOffset = {};
+        shaderInputs.color = color;
+        OpenGLSetShaderUniforms(&shaderInputs);
+        GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
+        
+        x = tempX;
+        y = tempY;
+    }
+    
+    OpenGLUnbind_Texture_VAO_Program();
+}
+
 
 uint32 OpenGLGenProgramId(char *vertexShaderSource, char *fragmentShaderSource)
 {
@@ -537,7 +707,7 @@ uint32 OpenGLGenProgramId(char *vertexShaderSource, char *fragmentShaderSource)
 
 
 
-void OpenGLDrawRectangle(v4 rect, v4 screenRect, v4 color, uint32 programId, real32 rotateDegrees = 0.0f)
+void OpenGLDrawRectangle(v4 rect, v2 screenDim, v4 color, uint32 programId, real32 rotateDegrees = 0.0f)
 {
     
     static bool firstCall = true;
@@ -595,9 +765,9 @@ void OpenGLDrawRectangle(v4 rect, v4 screenRect, v4 color, uint32 programId, rea
     RotationAboutZAxis(&(shaderInputs.rotationMatAboutZAxis), rotateDegrees);
     TranslationMat(&shaderInputs.translationMat, {rect.x + max.x, rect.y + max.y});
     
-    shaderInputs.orthoProjection.data[0] = 2.0f/screenRect.w;
+    shaderInputs.orthoProjection.data[0] = 2.0f/screenDim.x;
     shaderInputs.orthoProjection.data[3] = -1.0f;
-    shaderInputs.orthoProjection.data[5] = 2.0f/screenRect.h;
+    shaderInputs.orthoProjection.data[5] = 2.0f/screenDim.y;
     shaderInputs.orthoProjection.data[7] = -1.0f;
     shaderInputs.orthoProjection.data[10] = 1.0f;
     shaderInputs.orthoProjection.data[15] = 1.0f;
@@ -611,10 +781,10 @@ void OpenGLDrawRectangle(v4 rect, v4 screenRect, v4 color, uint32 programId, rea
 }
 
 
-void OpenGLDrawRectangle(v2 pt1, v2 pt2, v4 screenRect, v4 color, uint32 programId, real32 rotateDegrees = 0.0f)
+void OpenGLDrawRectangle(v2 pt1, v2 pt2, v2 screenDim, v4 color, uint32 programId, real32 rotateDegrees = 0.0f)
 {
     v4 rect = {pt1.x, pt1.y, pt2.x - pt1.x, pt2.y - pt1.y};
-    OpenGLDrawRectangle(rect, screenRect, color, programId, rotateDegrees);
+    OpenGLDrawRectangle(rect, screenDim, color, programId, rotateDegrees);
 }
 
 
@@ -629,26 +799,6 @@ void CreateSpritesheet(char *imagePath, Spritesheet *spritesheet, int32 numFrame
     spritesheet->normalizedFrameWidth = spritesheet->frameWidth/(real32)spritesheet->textureInfo.width;
     spritesheet->normalizedFrameHeight = spritesheet->frameHeight/(real32)spritesheet->textureInfo.height;
     spritesheet->vao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin((int32)spritesheet->frameWidth, (int32)spritesheet->frameHeight, {0.0f, 0.0f}, {spritesheet->normalizedFrameWidth, spritesheet->normalizedFrameHeight});
-}
-
-char* ReadEntireFileAndNullTerminate(char *filepath, Memory *mem)
-{
-    uint64 fileSize = PfGetFileSize(filepath);
-    char *fileData = (char *)PushSize(mem, fileSize + 1);
-    int64 bytesRead = PfReadEntireFile(filepath, fileData);
-    ASSERT(bytesRead == (int64)fileSize, "Did not read all bytes");
-    fileData[fileSize] = 0;
-    return fileData;
-}
-
-
-char* ReadEntireFile(char *filepath, Memory *mem)
-{
-    uint64 fileSize = PfGetFileSize(filepath);
-    char *fileData = (char *)PushSize(mem, fileSize);
-    int64 bytesRead = PfReadEntireFile(filepath, fileData);
-    ASSERT(bytesRead == (int64)fileSize, "Did not read all bytes");
-    return fileData;
 }
 
 
@@ -694,10 +844,12 @@ void DrawRectangle(uint8 *offscreenMemory, int width, int height, uint32 pitch,r
     }
 }
 
-#if 1
+
 int main(int argc, char **argv)
 {
-    real32 fps = 30.0f;
+    v2 gameResolution = {1280.0f, 720.0f};
+    
+    real32 fps = 60.0f;
     real32 targetMillisecondsPerFrame = (1000.0f/fps);
     real32 dT = 1.0f/fps;
     
@@ -705,7 +857,7 @@ int main(int argc, char **argv)
     PfGLConfig(4, 3, true);
     
     PfWindow window[1] = {};
-    PfCreateWindow(&window[0], (char*)"WINDOW 0", 0, 0, 800, 600);
+    PfCreateWindow(&window[0], (char*)"WINDOW 0", 0, 0, (int32)gameResolution.x, (int32)gameResolution.y);
     PfRect clientRect = PfGetClientRect(&window[0]);
     
     int32 playBackSlot = 0;
@@ -714,6 +866,7 @@ int main(int argc, char **argv)
     
     Memory gameStateStorage = {};
     Memory assetStorage = {};
+    
     HotCodeRelaunchPersistentData hcrData = {};
 #if HOT_CODE_RELOADABLE
     if(argc >= 2 && AreStringsSame(argv[1], "hcr_reloaded") && PfFilepathExists("hot_code_relaunch_persistent_data"))
@@ -724,15 +877,17 @@ int main(int argc, char **argv)
         hotCodeReloaded = true;
     }
 #endif
-    gameStateStorage.size = MEGABYTES((uint64)512);
-    assetStorage.size = MEGABYTES((uint64)128);
+    gameStateStorage.size = MEGABYTES((uint64)8);
+    assetStorage.size = MEGABYTES((uint64)64);
+    globalTemporaryStorage.size = MEGABYTES((uint64)16);
     
     void *baseAddressForGameMemoryStorage = (void*)0;
 #if DEBUG_BUILD | HOT_CODE_RELOADABLE | INPUT_RECORDING_PLAYBACK
     baseAddressForGameMemoryStorage = (void*)TERABYTES((uint64)4);
 #endif
-    gameStateStorage.base = (uint8*)PfVirtualAlloc(baseAddressForGameMemoryStorage,(size_t)(gameStateStorage.size + assetStorage.size));
+    gameStateStorage.base = (uint8*)PfVirtualAlloc(baseAddressForGameMemoryStorage,(size_t)(gameStateStorage.size + assetStorage.size + globalTemporaryStorage.size));
     assetStorage.base = gameStateStorage.base + gameStateStorage.size;
+    globalTemporaryStorage.base = assetStorage.base + assetStorage.size;
 #if DEBUG_BUILD
     ASSERT(((void*)gameStateStorage.base) == baseAddressForGameMemoryStorage, "Could not allocate game storage at predefined address location(To support hot code reload and input playback)");
 #endif
@@ -750,12 +905,12 @@ int main(int argc, char **argv)
     
     gameState = PushStruct(&gameStateStorage, GameState);
     
-    gameState->bulletAllocator.length = 20;
+    gameState->bulletAllocator.length = 15;
     gameState->bulletAllocator.chunkSize = sizeof(Bullet);
     gameState->bulletAllocator.base = (uint8 *)PushArray(&gameStateStorage, Bullet, gameState->bulletAllocator.length);
     InitializeChunkAllocator(&(gameState->bulletAllocator));
     
-    gameState->asteroidAllocator.length = 30;
+    gameState->asteroidAllocator.length = 10;
     gameState->asteroidAllocator.chunkSize = sizeof(Asteroid);
     gameState->asteroidAllocator.base = (uint8 *)PushArray(&gameStateStorage, Asteroid, gameState->asteroidAllocator.length);
     InitializeChunkAllocator(&(gameState->asteroidAllocator));
@@ -771,6 +926,11 @@ int main(int argc, char **argv)
     gameState->animationClipsAllocator.base = (uint8 *)PushArray(&gameStateStorage, AnimationClip, gameState->animationClipsAllocator.length);
     InitializeChunkAllocator(&(gameState->animationClipsAllocator));
     
+    gameState->hitpointDisplayAllocator.length = 15;
+    gameState->hitpointDisplayAllocator.chunkSize = sizeof(HitpointDisplay);
+    gameState->hitpointDisplayAllocator.base = (uint8 *)PushArray(&gameStateStorage, HitpointDisplay, gameState->hitpointDisplayAllocator.length);
+    InitializeChunkAllocator(&(gameState->hitpointDisplayAllocator));
+    
     Sound* backgroundSound = 0;
     Sound* pewSound = 0;
     Sound* thrustSound = 0;
@@ -785,11 +945,9 @@ int main(int argc, char **argv)
         Sound **soundPointer = soundPointers[i];
         *soundPointer = PushStruct(&gameStateStorage, Sound);
         Sound *sound = *soundPointer;
-        uint32 soundFileSize = (uint32)PfGetFileSize(filepaths[i]);
         sound->id = i + 1;
-        sound->data = (int16*)PushSize(&assetStorage, soundFileSize);
-        bytesRead = PfReadEntireFile(filepaths[i], (void *)(sound->data));
-        ASSERT((uint32)bytesRead == soundFileSize, "Bytes read from sound file not equal to file size");
+        uint32 soundFileSize = (uint32)PfGetFileSize(filepaths[i]);
+        sound->data = (int16*)ReadEntireFile(filepaths[i], &assetStorage);
         sound->sampleCount = soundFileSize/(bytesPerFrame/numChannels);
     }
     
@@ -802,16 +960,17 @@ int main(int argc, char **argv)
     GameInput input = {};
     int64 inputFileHandle = -1;
     
-    gameState->spaceshipPos = {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f};
+    gameState->spaceshipPos = {gameResolution.x/2.0f, gameResolution.y/2.0f, 0.0f};
     gameState->paused = true;
     gameState->livesRemaining = 3;
+    gameState->score = 0;
     gameState->asteroidSpawnClock = 0.0f;
     gameState->asteroidSpawnDelay = 0.5f;
     gameState->asteroidsCount = 0;
     gameState->desiredAsteroidsCount = 7;
-    gameState->debrisPos = {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f};
+    gameState->debrisPos = {gameResolution.x/2.0f, gameResolution.y/2.0f, 0.0f};
     gameState->spaceshipVel = {};
-    gameState->debrisVel = {10.0f, 0.0f, 0.0f};
+    gameState->debrisVel = {20.0f, 0.0f, 0.0f};
     gameState->spaceshipRotation = 0.0f;
     gameState->bulletRadius = 3.0f;
     gameState->spaceshipRadius = 35.0f;
@@ -822,7 +981,6 @@ int main(int argc, char **argv)
     bool recording = false;
     bool playing = false;
     
-#if 1
     PfglMakeCurrent(&window[0]);
     
     TextureInfo spaceshipTextureInfo = OpenGLGenTexture("../data/images/double_ship.png");
@@ -836,85 +994,36 @@ int main(int argc, char **argv)
     uint32 spaceshipVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin((int32)gameState->spaceshipDim.x, (int32)gameState->spaceshipDim.y, {0.0f, 0.0f}, {0.5f, 1.0f});
     uint32 bulletVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin(bulletTextureInfo.width, bulletTextureInfo.height);
     uint32 asteroidVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin(asteroidTextureInfo.width, asteroidTextureInfo.height);
-    uint32 nebulaVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin(nebulaTextureInfo.width, nebulaTextureInfo.height);
-    uint32 debrisVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin(nebulaTextureInfo.width * 2, nebulaTextureInfo.height, {0.0f, 0.0f}, {2.0f, 1.0f});
+    uint32 nebulaVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin((int32)gameResolution.x, (int32)gameResolution.y);
+    real32 factor = gameResolution.x * 2.0f/(real32)debrisTextureInfo.width;
+    real32 factor2 = gameResolution.y/(real32)debrisTextureInfo.height;
+    uint32 debrisVao = OpenGLGenVAOForQuadrilateralCenteredAtOrigin((int32)(debrisTextureInfo.width * factor), (int32)(debrisTextureInfo.height * factor2), {0.0f, 0.0f}, {factor, factor2});
     
-    Memory restorePoint = gameStateStorage;
+    Memory restorePoint = globalTemporaryStorage;
     
-    char *vertexShaderSource = ReadEntireFileAndNullTerminate("../basic_vertex_shader.shader", &gameStateStorage);
-    char *vertexShaderSource2 = ReadEntireFileAndNullTerminate("../solid_color_vertex_shader.shader", &gameStateStorage);
-    char *fragmentShaderSource = ReadEntireFileAndNullTerminate("../basic_fragment_shader.shader", &gameStateStorage);
-    char *fragmentShaderSource2 = ReadEntireFileAndNullTerminate("../single_channel_fragment_shader.shader", &gameStateStorage);
-    char *fragmentShaderSource3 = ReadEntireFileAndNullTerminate("../solid_color_fragment_shader.shader", &gameStateStorage);
+    char *vertexShaderSource = ReadEntireFileAndNullTerminate("../basic_vertex_shader.glsl", &globalTemporaryStorage);
+    char *vertexShaderSource2 = ReadEntireFileAndNullTerminate("../solid_color_vertex_shader.glsl", &globalTemporaryStorage);
+    char *fragmentShaderSource = ReadEntireFileAndNullTerminate("../basic_fragment_shader.glsl", &globalTemporaryStorage);
+    char *fragmentShaderSource2 = ReadEntireFileAndNullTerminate("../single_channel_fragment_shader.glsl", &globalTemporaryStorage);
+    char *fragmentShaderSource3 = ReadEntireFileAndNullTerminate("../solid_color_fragment_shader.glsl", &globalTemporaryStorage);
     
     uint32 programId = OpenGLGenProgramId(vertexShaderSource, fragmentShaderSource);
     uint32 program2Id = OpenGLGenProgramId(vertexShaderSource, fragmentShaderSource2);
     uint32 program3Id = OpenGLGenProgramId(vertexShaderSource2, fragmentShaderSource3);
     
-    gameStateStorage = restorePoint;
+    globalTemporaryStorage = restorePoint;
     
     //Fonts
-    restorePoint = assetStorage;
+    FontInfo *font = PushStruct(&assetStorage, FontInfo);
+    CreateFont(font, "../data/fonts/pixel_font.ttf", 32, 95, 50, &assetStorage);
     
-    char *fontFilepath = "../data/fonts/DancingScript-Regular.ttf";
-    uint64 fileSize = PfGetFileSize(fontFilepath);
-    uint8* fontFileData = (uint8 *)PushSize(&assetStorage, fileSize); 
-    PfReadEntireFile(fontFilepath, fontFileData);
-    int32 fontBitmapWidth = 1024;
-    int32 fontBitmapHeight = 1024;
-    int32 fontBitmapBytesPerPixel = 1;
-    int32 firstCodepoint = 32;
-    int32 numCodepoints = 95;
-    uint32 fontTextureId, fontVao, fontVbo, fontEbo;
-    int32 fontBitmapPitch = fontBitmapBytesPerPixel * fontBitmapWidth;
-    uint8* fontBitmap = (uint8 *)PushSize(&assetStorage, fontBitmapHeight * fontBitmapWidth * fontBitmapBytesPerPixel); 
+    FontInfo *font2 = PushStruct(&assetStorage, FontInfo);
+    CreateFont(font2, "../data/fonts/pixel_font.ttf", 32, 95, 32, &assetStorage);
     
-    stbtt_packedchar charData[96] = {};
-    stbtt_pack_context packContext;
-    stbtt_fontinfo fontInfo;
-    stbtt_InitFont(&fontInfo, fontFileData, stbtt_GetFontOffsetForIndex(fontFileData,0));
-    real32 fontScale = 80;
-    real32 scale = stbtt_ScaleForPixelHeight(&fontInfo, fontScale);
-    int32 ascent, descent;
-    stbtt_GetFontVMetrics(&fontInfo, &ascent, &descent, 0);
-    
-    int32 ret = stbtt_PackBegin(&packContext, fontBitmap, fontBitmapWidth, fontBitmapHeight, 0, 1, 0);
-    ASSERT(ret == 1 , "");
-    ret = stbtt_PackFontRange(&packContext, fontFileData, 0, fontScale, firstCodepoint, numCodepoints, charData);
-    stbtt_PackEnd(&packContext);
-    
-    GL_CALL(glGenTextures(1, &fontTextureId));
-    GL_CALL(glBindTexture(GL_TEXTURE_2D, fontTextureId));
-    GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, fontBitmapWidth, fontBitmapHeight, 0, GL_RED, GL_UNSIGNED_BYTE, fontBitmap));
-    GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
-    
-    assetStorage = restorePoint;
-    
-    real32 vertices[20] = {};
-    uint32 quadIndices[] = 
-    {
-        0, 1, 3, // first triangle
-        1, 2, 3  // second triangle
-    };
-    
-    GL_CALL(glGenVertexArrays(1, &fontVao));
-    GL_CALL(glGenBuffers(1, &fontVbo));
-    GL_CALL(glGenBuffers(1, &fontEbo));
-    GL_CALL(glBindVertexArray(fontVao));
-    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, fontVbo));
-    GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_DYNAMIC_DRAW));
-    GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, fontEbo));
-    GL_CALL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(quadIndices), quadIndices, GL_STATIC_DRAW));
-    GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0));
-    GL_CALL(glEnableVertexAttribArray(0));
-    GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float))));
-    GL_CALL(glEnableVertexAttribArray(1));
-    GL_CALL(glBindVertexArray(0));
-    GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, 0));
-    GL_CALL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
+    FontInfo *font3 = PushStruct(&assetStorage, FontInfo);
+    CreateFont(font3, "../data/fonts/pixel_font.ttf", 32, 95, 28, &assetStorage);
     
     // Sprite animation
-    
     Spritesheet *explosionSpritesheet = PushStruct(&gameStateStorage, Spritesheet);
     CreateSpritesheet("../data/images/explosion_orange.png", explosionSpritesheet, 24, 1);
     
@@ -939,7 +1048,6 @@ int main(int argc, char **argv)
             break;
         }
 #if 1
-        //clientRect = PfGetClientRect(&window[0]);
         
 #if INPUT_RECORDING_PLAYBACK
         if(!recording && PfGetKeyState(&window[0], PF_LEFT_CTRL) && (PfGetKeyState(&window[0], PF_LEFT_SHIFT) == false) && PfGetKeyState(&window[0], PF_R))
@@ -1029,33 +1137,7 @@ int main(int argc, char **argv)
             input.left = PfGetKeyState(&window[0], PF_A);
             input.brake = PfGetKeyState(&window[0], PF_S);
             input.right = PfGetKeyState(&window[0], PF_D);
-            input.fire = PfGetKeyState(&window[0], PF_SPACEBAR);
-            
-            if(PfGetKeyState(&window[0], PF_NUMPAD_8))
-            {
-                PlayingSound *backgroundPlayingSound = GetPlayingSound(gameState, backgroundPlayingSoundID);
-                if(backgroundPlayingSound)
-                {
-                    backgroundPlayingSound->paused = true;
-                }
-            }
-            else if(PfGetKeyState(&window[0], PF_NUMPAD_2))
-            {
-                PlayingSound *backgroundPlayingSound = GetPlayingSound(gameState, backgroundPlayingSoundID);
-                if(backgroundPlayingSound)
-                {
-                    backgroundPlayingSound->paused = false;
-                }
-            }
-            
-            if(PfGetKeyState(&window[0], PF_NUMPAD_0))
-            {
-                DestroySound(gameState, backgroundPlayingSoundID);
-            }
-            else if(PfGetKeyState(&window[0], PF_NUMPAD_1))
-            {
-                backgroundPlayingSoundID = PlaySound(gameState, backgroundSound, true, 0.9f, 0.9f);
-            }
+            input.fire = PfGetKeyState(&window[0], PF_K);
 #if INPUT_RECORDING_PLAYBACK
         }
         if(recording)
@@ -1063,6 +1145,20 @@ int main(int argc, char **argv)
             PfWriteFile(inputFileHandle, (void *)&input, sizeof(input));
         }
 #endif
+        
+        if(gameState->paused)
+        {
+            if(PfGetKeyState(&window[0], PF_SPACEBAR, true))
+            {
+                gameState->paused = false;
+                gameState->livesRemaining = 3;
+                gameState->score = 0;
+            }
+            
+        }
+        
+        
+        
         static bool toggled = false;
         if(PfGetKeyState(PF_LEFT_ALT, true) == 0 || PfGetKeyState(PF_ENTER, true) == 0)
         {
@@ -1106,10 +1202,10 @@ int main(int argc, char **argv)
         v3 displacement = (gameState->spaceshipVel*dT) + (accelaration*0.5f*dT*dT);
         gameState->spaceshipPos = gameState->spaceshipPos + displacement;
         gameState->spaceshipVel = gameState->spaceshipVel + (accelaration * dT);
-        WrapAroundIfOutOfBounds((v2*)(&(gameState->spaceshipPos)), {0.0f, 0.0f, (real32)clientRect.width, (real32)clientRect.height});
+        WrapAroundIfOutOfBounds((v2*)(&(gameState->spaceshipPos)), {0.0f, 0.0f, gameResolution.x, gameResolution.y});
         
         gameState->debrisPos = gameState->debrisPos + gameState->debrisVel*dT;
-        WrapAroundIfOutOfBounds((v2*)(&(gameState->debrisPos)), {0.0f, 0.0f, (real32)clientRect.width, (real32)clientRect.height});
+        WrapAroundIfOutOfBounds((v2*)(&(gameState->debrisPos)), {0.0f, 0.0f, gameResolution.x, gameResolution.y});
         
         gameState->firingCoolDown -= dT;
         if(gameState->firingCoolDown <= 0.0f) 
@@ -1163,7 +1259,7 @@ int main(int argc, char **argv)
             else
             {
                 bullet->pos = bullet->pos + (bullet->vel * dT);
-                WrapAroundIfOutOfBounds((v2*)(&(bullet->pos)), {0.0f, 0.0f, (real32)clientRect.width, (real32)clientRect.height});
+                WrapAroundIfOutOfBounds((v2*)(&(bullet->pos)), {0.0f, 0.0f, gameResolution.x, gameResolution.y});
                 previous = bullet;
                 bullet = bullet->next;
             }
@@ -1188,7 +1284,7 @@ int main(int argc, char **argv)
                         bool setDistanceToAtleastOneWall = false;
                         if(dir.y != 0)
                         {
-                            v2 b = {0.0f, (real32)clientRect.height};
+                            v2 b = {0.0f, gameResolution.y};
                             v2 c = {gameState->spaceshipPos.y, gameState->spaceshipPos.y};
                             v2 a = (b - c)/dir.y;
                             ASSERT(a.x * a.y < 0.0f, "Not possible to reach both ends of screen when moving along a dir");
@@ -1198,7 +1294,7 @@ int main(int argc, char **argv)
                         
                         if(dir.x != 0)
                         {
-                            v2 b = {0.0f, (real32)clientRect.width};
+                            v2 b = {0.0f, gameResolution.x};
                             v2 c = {gameState->spaceshipPos.x, gameState->spaceshipPos.x};
                             v2 a = (b - c)/dir.x;
                             ASSERT(a.x * a.y < 0.0f, "Not possible to reach both ends of screen when moving along a dir");
@@ -1236,7 +1332,7 @@ int main(int argc, char **argv)
         {
             asteroid->pos = asteroid->pos + (asteroid->vel * dT);
             asteroid->rotation = asteroid->rotation + (asteroid->rotationalVelocity * dT);
-            WrapAroundIfOutOfBounds((v2*)(&(asteroid->pos)), {0.0f, 0.0f, (real32)clientRect.width, (real32)clientRect.height});
+            WrapAroundIfOutOfBounds((v2*)(&(asteroid->pos)), {0.0f, 0.0f, gameResolution.x, gameResolution.y});
             asteroid = asteroid->next;
         }
         
@@ -1249,6 +1345,8 @@ int main(int argc, char **argv)
             Asteroid *previousAsteroid = 0;
             asteroid = gameState->asteroids;
             bool deleteThisBullet = false;
+            int32 asteroidsDestroyed = 0;
+            uint64 pointsGained = 0;
             while(asteroid)
             {
                 v2 asteroidPos = {asteroid->pos.x, asteroid->pos.y};
@@ -1269,9 +1367,9 @@ int main(int argc, char **argv)
                     FreeChunk(&(gameState->asteroidAllocator), (uint8 *)asteroid);
                     asteroid = next;
                     gameState->asteroidsCount--;
-                    PlaySound(gameState, boomSound, false, 0.2f, 0.2f);
+                    PlaySound(gameState, boomSound, false, 0.1f, 0.1f);
                     PlayAnimation(gameState, explosionSpritesheet, explosionPos, 16.0f, 0, 24, 1);
-                    
+                    asteroidsDestroyed++;
                 }
                 else
                 {
@@ -1280,6 +1378,7 @@ int main(int argc, char **argv)
                 }
             }
             
+            pointsGained = asteroidsDestroyed * 10;
             if(deleteThisBullet)
             {
                 if(previousBullet)
@@ -1293,12 +1392,26 @@ int main(int argc, char **argv)
                 Bullet *next = bullet->next;
                 FreeChunk(&(gameState->bulletAllocator), (uint8*)bullet);
                 bullet = next;
+                
+                HitpointDisplay *hitpointDisplay = (HitpointDisplay *)AllocateChunk(&gameState->hitpointDisplayAllocator);
+                if(hitpointDisplay)
+                {
+                    hitpointDisplay->pos = {bulletPos.x, bulletPos.y, 0.0f};
+                    hitpointDisplay->value = pointsGained;
+                    hitpointDisplay->durationSpent = 0.0f;
+                    
+                    hitpointDisplay->next = gameState->hitpointDisplays;
+                    gameState->hitpointDisplays = hitpointDisplay;
+                }
             }
             else
             {
                 previousBullet = bullet;
                 bullet = bullet->next;
             }
+            
+            
+            gameState->score += pointsGained;
         }
         
         Asteroid *previousAsteroid = 0;
@@ -1333,7 +1446,7 @@ int main(int argc, char **argv)
                     gameState->paused = true;
                 }
                 
-                PlaySound(gameState, boomSound, false, 0.2f, 0.2f);
+                PlaySound(gameState, boomSound, false, 0.1f, 0.1f);
                 PlayAnimation(gameState, explosionSpritesheet, explosion1Pos, 16.0f, 0, 24, 1);
                 PlayAnimation(gameState, explosionSpritesheet2, explosion2Pos, 16.0f, 0, 24, 1);
             }
@@ -1364,14 +1477,14 @@ int main(int argc, char **argv)
         shaderInputs.textureId = nebulaTextureInfo.textureId;
         shaderInputs.vao = nebulaVao;
         shaderInputs.programId = programId;
-        shaderInputs.orthoProjection.data[0] = 2.0f/(real32)clientRect.width;
+        shaderInputs.orthoProjection.data[0] = 2.0f/gameResolution.x;
         shaderInputs.orthoProjection.data[3] = -1.0f;
-        shaderInputs.orthoProjection.data[5] = 2.0f/(real32)clientRect.height;
+        shaderInputs.orthoProjection.data[5] = 2.0f/gameResolution.y;
         shaderInputs.orthoProjection.data[7] = -1.0f;
         shaderInputs.orthoProjection.data[10] = 1.0f;
         shaderInputs.orthoProjection.data[15] = 1.0f;
         Identity(&(shaderInputs.rotationMatAboutZAxis));
-        TranslationMat(&(shaderInputs.translationMat), {(real32)clientRect.width/2.0f, (real32)clientRect.height/2.0f, 0.0f});
+        TranslationMat(&(shaderInputs.translationMat), {gameResolution.x/2.0f, gameResolution.y/2.0f, 0.0f});
         
         OpenGLBind_Texture_VAO_Program(&shaderInputs);
         OpenGLSetShaderUniforms(&shaderInputs);
@@ -1490,98 +1603,93 @@ int main(int argc, char **argv)
             currentClip = nextClip;
         }
         
+        //Draw hitpoints
+        v4 screenRect = {0.0f, 0.0f, gameResolution.x, gameResolution.y};
+        HitpointDisplay *previousHitpointDisplay = 0;
+        HitpointDisplay *currentHitpointDisplay = gameState->hitpointDisplays;
+        real32 displayVelocity = 2.5f;
+        real32 displayDuration = 0.5f;
+        char hitpointString[1 + 20 + 1] = {};
+        hitpointString[0] = '+';
+        while(currentHitpointDisplay)
+        {
+            HitpointDisplay *nextHitpointDisplay = currentHitpointDisplay->next;
+            if(currentHitpointDisplay->durationSpent >= displayDuration)
+            {
+                if(previousHitpointDisplay)
+                {
+                    previousHitpointDisplay->next = nextHitpointDisplay;
+                }
+                else
+                {
+                    gameState->hitpointDisplays = nextHitpointDisplay;
+                }
+                
+                FreeChunk(&gameState->hitpointDisplayAllocator, (uint8*)currentHitpointDisplay);
+            }
+            else
+            {
+                currentHitpointDisplay->pos += {0.0f, displayVelocity, 0.0f}; 
+                real32 opacity = 1.0f - (currentHitpointDisplay->durationSpent/displayDuration);
+                sprintf(hitpointString, "+%" PRIu64, currentHitpointDisplay->value);
+                OpenGLDrawTextAt({currentHitpointDisplay->pos.x , currentHitpointDisplay->pos.y}, {screenRect.w, screenRect.h}, hitpointString, {0.0f, 1.0f, 0.0f, opacity}, font3, program2Id);
+                currentHitpointDisplay->durationSpent += dT;
+                
+                previousHitpointDisplay = currentHitpointDisplay;
+            }
+            
+            currentHitpointDisplay = nextHitpointDisplay;
+        }
+        
+        
+        //Draw score
+        char scoreString[7 + 20 + 1] = {};
+        char livesRemainingString[8 + 1] = {};
+        sprintf(scoreString, "SCORE: %" PRIu64, gameState->score);
+        sprintf(livesRemainingString, "LIVES: %d" , gameState->livesRemaining);
+        
+        v2 textBounds = GetTextBounds(scoreString, font2);
+        OpenGLDrawTextAt({screenRect.w - textBounds.x - 5.0f, screenRect.h - textBounds.y - 5.0f}, {screenRect.w, screenRect.h}, scoreString, {1.0f, 1.0f, 1.0f, 1.0f}, font2, program2Id);
+        v4 color = {1.0f, 1.0f, 1.0f, 1.0f};
+        if(gameState->livesRemaining == 1) color = {1.0f, 0.0f, 0.0f, 1.0f};
+        textBounds = GetTextBounds(livesRemainingString, font2);
+        OpenGLDrawTextAt({5.0f, gameResolution.y - textBounds.y - 5.0f}, {screenRect.w, screenRect.h}, livesRemainingString, color, font2, program2Id);
+        
         if(gameState->paused)
         {
-            gameState->livesRemaining = 3;
-            
             FreeAllChunks(&gameState->asteroidAllocator);
             gameState->asteroidsCount = 0;
             gameState->asteroids = 0;
             gameState->asteroidSpawnClock = 0.0f;
             
-            char *text = "START";
-            real32 x = (real32)clientRect.width/2.0f;
-            real32 y = (real32)clientRect.height/2.0f;
-            v4 screenRect = {0.0f, 0.0f, x * 2.0f, y * 2.0f};
+            
+            char *text = "PRESS SPACE TO START";
+            real32 x = gameResolution.x/2.0f;
+            real32 y = gameResolution.y/2.0f;
             v4 rect = {x, y, 20.0f, 20.0f};
             
+            OpenGLDrawRectangle({0.0f, 0.0f}, {screenRect.w, screenRect.h}, {screenRect.w, screenRect.h}, {0.0f, 0.0f, 0.0f, 0.6f}, program3Id);
             
-            OpenGLDrawRectangle({0.0f, 0.0f}, {screenRect.w, screenRect.h}, screenRect, {0.0f, 0.0f, 0.0f, 0.6f}, program3Id);
+            textBounds = GetTextBounds(text, font);
+            x -= textBounds.x/2.0f;
+            y -= textBounds.y/2.0f;
+#if 0
             //baseline
-            //OpenGLDrawRectangle({x, y}, {screenRect.w, y + 1.0f}, screenRect, {1.0f, 1.0f, 1.0f, 1.0f}, program3Id);
-            //OpenGLDrawRectangle({x, y, 3.0f, scale}, screenRect, {1.0f, 0.0f, 0.0f, 1.0f}, program3Id);
-            
-            shaderInputs.type = single_channel_shader;
-            shaderInputs.textureId = fontTextureId;
-            shaderInputs.vao = fontVao;
-            shaderInputs.programId = program2Id;
-            OpenGLBind_Texture_VAO_Program(&shaderInputs);
-            
-#if 1
-            
-            for(int32 i = 0; i < 5; i++)
-            {
-                
-                stbtt_aligned_quad q;
-                int32 relativeIndex = text[i] - 32;
-                stbtt_packedchar a = charData[relativeIndex];
-#if 0
-                static bool firstTime = true;
-                if(firstTime)
-                {
-                    DEBUG_LOG("----------- %c --------------\n", text[i]);
-                    DEBUG_LOG("xoff: %.2f yoff:%.2f\nxoff2:%.2f yoff2:%.2f\nxAdvance:%.2f\nx0:%d y0:%d\nx1:%d y1:%d\n",
-                              a.xoff, a.yoff, a.xoff2, a.yoff2, a.xadvance, a.x0, a.y0, a.x1, a.y1);
-                    DEBUG_LOG("----------------------------\n");
-                }
+            OpenGLDrawRectangle({x, y}, {screenRect.w, y + 1.0f}, {screenRect.w, screenRect.h}, {1.0f, 1.0f, 1.0f, 1.0f}, program3Id);
+            OpenGLDrawRectangle({x, y, 3.0f, font->scale}, {screenRect.w, screenRect.h}, {1.0f, 0.0f, 0.0f, 1.0f}, program3Id);
+            OpenGLDrawRectangle({x, y, textBounds.x, textBounds.y}, {screenRect.w, screenRect.h}, {0.0f, 0.0f, 1.0f, 1.0f}, program3Id);
 #endif
-                if(i == 0) x -= a.xoff;
-                
-                real32 tempX = x;
-                real32 tempY = y;
-                stbtt_GetPackedQuad(charData, fontBitmapWidth, fontBitmapHeight, text[i] - 32, &tempX, &tempY, &q, 0);
-                
-                real32 newVertices[] = 
-                {
-                    q.x0,q.y0, 0.0f, q.s0,q.t1,
-                    q.x1,q.y0, 0.0f, q.s1,q.t1,
-                    q.x1,q.y1, 0.0f, q.s1,q.t0,
-                    q.x0,q.y1, 0.0f, q.s0,q.t0
-                };
-                
-                GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, fontVbo));
-                GL_CALL(glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(newVertices), newVertices));
-                
-                Identity(&(shaderInputs.rotationMatAboutZAxis));
-                TranslationMat(&(shaderInputs.translationMat), {0.0F, -a.yoff});
-                shaderInputs.textureOffset = {};
-                shaderInputs.color = {1.0f, 1.0f, 1.0f, 1.0f};
-                OpenGLSetShaderUniforms(&shaderInputs);
-                
-                GL_CALL(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0));
-                
-#if 0
-                //xoff & xoff2
-                // NOTE(KARAN): Make sure to rebind font bindings if you uncomment this piece of code
-                OpenGLDrawRectangle({x + a.xoff, y + 2, -a.xoff, 1.0f}, screenRect, {0.0f, 0.0f, 1.0f, 1.0f}, program3Id);
-                OpenGLDrawRectangle({x, y + 4, a.xoff2, 1.0f}, screenRect, {0.0f, 1.0f, 0.0f, 1.0f}, program3Id);
-                
-                //yoff & yoff2
-                OpenGLDrawRectangle({x, y + a.yoff, 1.0f, -a.yoff}, screenRect, {0.0f, 0.0f, 1.0f, 1.0f}, program3Id);
-                OpenGLDrawRectangle({x + 2, y, 1.0f, a.yoff2}, screenRect, {0.0f, 1.0f, 0.0f, 1.0f}, program3Id);
-#endif
-                x = tempX;
-                y = tempY;
-            }
-#if 0
-            firstTime = false;
-#endif
-#endif
+            OpenGLDrawTextAt({x, y}, {screenRect.w, screenRect.h}, text, {1.0f, 1.0f, 1.0f, 1.0f}, font, program2Id);
             
+            char *text2 = "W,A,S,D TO MOVE | K TO SHOOT";
+            x = gameResolution.x/2.0f;
+            y -= textBounds.y + 5.0f;
+            textBounds = GetTextBounds(text2, font3);
+            x -= textBounds.x/2.0f;
+            y -= textBounds.y/2.0f;
+            OpenGLDrawTextAt({x, y}, {screenRect.w, screenRect.h}, text2, {1.0f, 1.0f, 1.0f, 1.0f}, font3, program2Id);
         }
         
-        // Unbind stuff
-        OpenGLUnbind_Texture_VAO_Program();
         if(wasBlendEnabled == GL_FALSE)
         {
             glDisable(GL_BLEND);
@@ -1673,12 +1781,6 @@ int main(int argc, char **argv)
         int16 *sampleToWrite = (int16*)soundBuffer.buffer;
         for(uint64 i = 0; i < samplesToWrite; i+=numChannels)
         {
-            /*int16 value = (int16)(Sine(t) * amplitude * volumePercentage); 
-            t += increment;
-            
-            *soundBuffer++ = value;
-            *soundBuffer++ = value;
-            */
             *sampleToWrite++ = (int16)soundMixingBuffer[i];
             *sampleToWrite++ = (int16)soundMixingBuffer[i + 1];
         }
@@ -1706,8 +1808,6 @@ int main(int argc, char **argv)
         PfTimestamp s6 = PfGetTimestamp();
         real32 t5 = PfGetSeconds(s5, s6);
         
-        //DEBUG_LOG("%f,%f,%f,%f,%f,%f\n", t0 * 1000.0f, t1 * 1000.0f, t2 * 1000.0f, t3 * 1000.0f, t4 * 1000.0f, t5 * 1000.0f); 
-        
         PfTimestamp end = PfGetTimestamp();
         uint64 endCycles = PfRdtsc();
         
@@ -1718,17 +1818,11 @@ int main(int argc, char **argv)
         startCycles = endCycles;
         start = end;
         
-        char temp[256];
-        sprintf(temp, "[%.2fms %.2FPS %.3fMHz %.3fms sleep] [RECORDING: %d PLAYING:%d]", secondsPerFrame * 1000.0f, 1.0f/secondsPerFrame, cyclesPerFrame/(secondsPerFrame * 1000.0f * 1000.0f), t5*1000.0f, recording, playing);
-        PfSetWindowTitle(&window[0], temp);
+        /*char temp[256];
+        sprintf(temp, "[%.2fms %.2FPS %.3fMHz %.3fms sleep] [RECORDING: %d PLAYING:%d]", secondsPerFrame * 1000.0f, 1.0f/secondsPerFrame, cyclesPerFrame/(secondsPerFrame * 1000.0f * 1000.0f), t5*1000.0f, recording, playing);*/
+        PfSetWindowTitle(&window[0], "DEMO");
         
     }
     
-#if PLATFORM_LINUX
-    XCloseDisplay(globalDisplay);
-#endif
-    //DEBUG_LOG("Exiting application.\n");
     return 0;
 }
-#endif
-#endif

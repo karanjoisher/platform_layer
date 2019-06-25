@@ -124,3 +124,5 @@ int GetStrLength(char *str)
     for(;str[length] != 0; length++);
     return length;
 }
+
+

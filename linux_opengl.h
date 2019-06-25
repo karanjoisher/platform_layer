@@ -6,6 +6,7 @@
 #define INSERT_NEW_FUNCTION_GRABS_HERE
 
 INSERT_NEW_FUNCTION_TYPES_HERE
+typedef void APIENTRY type_glBufferSubData (GLenum target, GLintptr offset, GLsizeiptr size, const void *data);
 typedef void APIENTRY type_glUniform4f (GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3);
 typedef void APIENTRY type_glUniform2f (GLint location, GLfloat v0, GLfloat v1);
 typedef void APIENTRY type_glGenVertexArrays (GLsizei n, GLuint *arrays);
@@ -32,6 +33,7 @@ typedef void APIENTRY type_glUniformMatrix4fv (GLint location, GLsizei count, GL
 #define GL_FUNCTION(name) global_variable type_##name *name
 
 INSERT_NEW_FUNCTION_DECLARATIONS_HERE
+GL_FUNCTION(glBufferSubData);
 GL_FUNCTION(glUniform4f);
 GL_FUNCTION(glUniform2f);
 GL_FUNCTION(glGenVertexArrays);
@@ -64,6 +66,7 @@ GL_FUNCTION(glUniformMatrix4fv);
 void GrabOpenGLFuncPointers()
 {
     INSERT_NEW_FUNCTION_GRABS_HERE;
+GL_GET_PROC_ADDRESS(glBufferSubData);
 GL_GET_PROC_ADDRESS(glUniform4f);
 GL_GET_PROC_ADDRESS(glUniform2f);
 GL_GET_PROC_ADDRESS(glGenVertexArrays);

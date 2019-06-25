@@ -443,3 +443,8 @@ RoundReal32ToUint32(real32 Real32)
 }
 
 
+real32 Abs(real32 val)
+{
+    if(val < 0.0f) return val * -1.0f;
+    return val;
+}
